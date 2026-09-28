@@ -63,6 +63,7 @@ const scenarios = {
   bot: 'quality=low&debug',
   mechanics: 'quality=low&debug',
   flow: 'quality=low',
+  regress: 'quality=low',
 };
 const q = process.env.Q || scenarios[scenario] || scenarios.run;
 await page.goto(`http://localhost:${port}/index.html?${q}`, { waitUntil: 'load' });
@@ -329,6 +330,82 @@ if (scenario === 'run') {
   await click('btn-wardrobe2'); await wait(600); await log('over→wardrobe');
   await click('w-back'); await wait(600); await log('back home');
   await click('btn-play'); await wait(800); await log('play again');
+} else if (scenario === 'regress') {
+  // replays the bugs found in review; each check prints ok / FAIL
+  const cdp = await context.newCDPSession(page);
+  const swipe = async (x0, y0, x1, y1, steps = 8) => {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y: y0 }] });
+    for (let i = 1; i <= steps; i++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x0 + ((x1 - x0) * i) / steps, y: y0 + ((y1 - y0) * i) / steps }] });
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  };
+  const check = (name, ok, detail = '') => console.log(`${ok ? 'ok  ' : 'FAIL'} ${name} ${detail}`);
+  const g = (fn, arg) => page.evaluate(fn, arg);
+  await play();
+  await wait(1500);
+  await g(() => { const t = window.__game.track; t.reset(window.__game.dist); t.nextS = Infinity; });
+  // 1. a long swipe moves exactly one lane
+  await g(() => { window.__game.player.lane = -1; window.__game.player.x = -2.1; });
+  await swipe(100, 600, 260, 600, 10);
+  await wait(300);
+  const lane1 = await g(() => window.__game.player.lane);
+  check('long swipe moves one lane', lane1 === 0, `(lane ${lane1})`);
+  // 2. bump off a train from an edge lane: must not end up inside it
+  await g(() => {
+    const G = window.__game, t = G.track, d = G.dist;
+    t.reset(d); t.nextS = Infinity;
+    G.player.lane = -1; G.player.x = -2.1; G.player.prevLane = -1;
+    t.addObstacle('train', 0, d - 2, { cars: 3 });
+  });
+  await wait(200);
+  await swipe(100, 600, 260, 600, 10);
+  await wait(1500);
+  const after = await g(() => ({ st: window.__game.state, lane: window.__game.player.lane }));
+  check('side bump off a train is safe', after.st === 'playing' && after.lane === -1, JSON.stringify(after));
+  // swipe again right away into the same train: still refused
+  await swipe(100, 600, 260, 600, 10);
+  await wait(1200);
+  const after2 = await g(() => ({ st: window.__game.state, lane: window.__game.player.lane }));
+  check('repeat swipe into train refused', after2.st === 'playing', JSON.stringify(after2));
+  // 3. rush: hearts collected in the air, none left floating after landing
+  await g(() => { const G = window.__game; G.track.reset(G.dist); G.track.nextS = G.dist + 40; });
+  const h0 = await g(() => window.__game.runHearts);
+  await g(() => window.__game.activate('rush', window.__game.player.x, 1, 0));
+  await wait(9000);
+  const hRush = await g(() => window.__game.runHearts);
+  check('rush collects hearts', hRush - h0 > 0, `(+${hRush - h0})`);
+  // end the rush now and make sure no hearts are left hanging out of reach
+  await g(() => { window.__game.powers.rush = 0.01; });
+  await wait(1500);
+  const rush = await g(() => ({ floating: window.__game.track.items.filter((it) => it.y > 4 && it.s > window.__game.dist).length, rushing: window.__game.powers.rush > 0, y: +window.__game.player.y.toFixed(2), st: window.__game.state }));
+  check('no unreachable sky hearts after rush', !rush.rushing && rush.floating === 0 && rush.st === 'playing', JSON.stringify(rush));
+  // 4. pause menu sound toggles keep the game quiet
+  await page.evaluate(() => document.getElementById('btn-pause').click());
+  await wait(300);
+  await page.evaluate(() => { document.getElementById('btn-music2').click(); document.getElementById('btn-music2').click(); document.getElementById('btn-sound2').click(); document.getElementById('btn-sound2').click(); });
+  await wait(300);
+  const ctxState = await g(() => window.__game.audio.ctx && window.__game.audio.ctx.state);
+  check('pause menu keeps audio suspended', ctxState !== 'running', `(${ctxState})`);
+  // 5. second run starts easy (difficulty measured from the run start)
+  await page.evaluate(() => document.getElementById('btn-home1').click());
+  await wait(500);
+  await g(() => { window.__game.dist += 5000; });
+  await play();
+  await wait(800);
+  const firstTypes = await g(() => { const G = window.__game; return [...new Set(G.track.obstacles.filter((o) => o.sa - G.runStart < 220).map((o) => o.type))]; });
+  check('second run starts easy', !firstTypes.some((t) => ['train', 'yarn', 'gate', 'ramp'].includes(t)), JSON.stringify(firstTypes));
+  // 6. outfit switching doesn't leak geometry
+  await g(() => { window.__game.state = 'playing'; window.__game.goHome(); });
+  await page.evaluate(() => document.getElementById('btn-wardrobe').click());
+  await wait(300);
+  const geo0 = await g(() => window.__game.renderer.info.memory.geometries);
+  for (let i = 0; i < 21; i++) await page.evaluate(() => document.getElementById('w-next').click());
+  await wait(600);
+  for (let i = 0; i < 21; i++) await page.evaluate(() => document.getElementById('w-next').click());
+  await wait(600);
+  const geo1 = await g(() => window.__game.renderer.info.memory.geometries);
+  check('outfit switching keeps geometry count flat', geo1 - geo0 < 40, `(${geo0} -> ${geo1})`);
 } else if (scenario === 'wardrobe') {
   await page.evaluate(() => document.getElementById('btn-wardrobe').click());
   await wait(2000);

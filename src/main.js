@@ -65,7 +65,7 @@ class Game {
     this.input = new Input(this.container, (a) => this.onAction(a));
 
     this.forcedQuality = ['low', 'medium', 'high'].includes(params.get('quality')) ? params.get('quality') : null;
-    this.quality = this.forcedQuality || this.save.quality || this.guessQuality();
+    this.quality = this.forcedQuality || this.guessQuality();
     this.fx.setQuality(this.quality);
     this.perf = { t: 0, frames: 0, slow: 0 };
 
@@ -147,7 +147,7 @@ class Game {
     return {
       lane: 0, prevLane: 0, x: 0, prevX: 0, vx: 0, y: 0, vy: 0, ground: 0,
       grounded: true, sliding: false, slideT: 0, fastFall: false, slideQueued: false,
-      flying: false, invincible: 0, coyote: 0, jumpBuf: 0,
+      flying: false, invincible: 0, coyote: 0, jumpBuf: 0, blockedBy: null,
     };
   }
 
@@ -169,6 +169,8 @@ class Game {
     this.baseFov = clamp(vfov, 48, 74);
     // portrait screens: pull the camera back a little so the side lanes fit
     this.camBack = clamp((1 - this.camera.aspect) * 2.2, 0, 1.4);
+    // sideways screens show the menus on the right, so frame Kitty on the left
+    this.sideways = this.camera.aspect > 1.15;
     this.camera.updateProjectionMatrix();
     this.world.starUniforms.uPx.value = this.pr;
   }
@@ -182,8 +184,8 @@ class Game {
     this.kitty.setOutfit(this.outfitById(this.save.outfit));
     this.ui.show('hud');
     this.ui.resetHud();
-    this.track.reset(this.dist);
     this.runStart = this.dist - this.startOffset;
+    this.track.reset(this.dist, this.runStart);
     this.tutorialRun = this.save.runs < 2 && !this.startOffset;
     if (this.tutorialRun) this.track.spawnTutorial(this.dist);
     this.player = this.freshPlayer();
@@ -286,7 +288,7 @@ class Game {
   }
 
   pause() {
-    if (this.state !== 'playing') return;
+    if (this.state !== 'playing' && this.state !== 'countdown') return;
     this.state = 'paused';
     this.input.enabled = false;
     this.ui.show('hud', 'pause');
@@ -397,6 +399,10 @@ class Game {
     const p = this.player;
     if (a === 'left' || a === 'right') {
       const nl = clamp(p.lane + (a === 'left' ? -1 : 1), -1, 1);
+      if (p.blockedBy && nl === p.blockedBy.lane && this.alongside(p.blockedBy)) {
+        this.audio.bump();
+        return;
+      }
       if (nl !== p.lane) {
         p.prevLane = p.lane;
         p.lane = nl;
@@ -453,7 +459,7 @@ class Game {
       p.flying = true;
       p.sliding = false;
       p.vy = 0;
-      this.track.beginRush(this.dist);
+      this.track.beginRush(this.dist, p.lane);
       this.trail.reset(p.x, p.y + 0.4);
       this.audio.whoosh();
     }
@@ -469,22 +475,37 @@ class Game {
     }
   }
 
+  // Push her back out of the obstacle's lane, on the side she came from, and
+  // refuse lane changes into it until she's clear.
+  bumpAway(o) {
+    const p = this.player;
+    const from = Math.sign(p.prevX - o.x) || Math.sign(p.x - o.x) || 1;
+    p.prevLane = p.lane;
+    p.lane = clamp(o.lane + from, -1, 1);
+    if (p.lane === o.lane) p.lane = clamp(o.lane - from, -1, 1);
+    o.ignoreUntil = this.time + 0.45;
+    p.blockedBy = o;
+  }
+
+  // Is this obstacle still right beside Kitty?
+  alongside(o) {
+    const d = this.dist;
+    return !o.remove && o.sa < d + C.KITTY_HD + 0.3 && o.sb > d - C.KITTY_HD - 0.3;
+  }
+
   onHit(o, side) {
     const p = this.player;
-    if (p.invincible > 0 || this.god) {
-      if (this.god && !side) o.ignoreUntil = this.time + 1;
-      if (side) {
-        p.lane = p.prevLane;
-        o.ignoreUntil = this.time + 0.4;
-      }
-      return;
-    }
     if (side) {
-      p.lane = p.prevLane;
-      o.ignoreUntil = this.time + 0.45;
+      this.bumpAway(o);
+      if (p.invincible > 0 || this.god) return;
       this.shake = Math.max(this.shake, 0.25);
       this.audio.bump();
       this.particles.dust(p.x, p.y + 0.5, 0, 6);
+      return;
+    }
+    if (p.invincible > 0 || this.god) {
+      // ghost straight through it rather than dying inside it later
+      o.ignoreUntil = Infinity;
       return;
     }
     if (this.powers.shield > 0) {
@@ -677,6 +698,11 @@ class Game {
       ? V[0].set(Math.sin(t * 0.5) * 0.25, 1.0, 2.7 + this.camBack * 0.55)
       : V[0].set(Math.sin(t * 0.35) * 0.35, 1.05, 3.3 + this.camBack * 0.6);
     const tl = V[1].set(0, wardrobe ? 0.62 : 0.6, 0);
+    if (this.sideways) {
+      const shift = wardrobe ? 1.05 : 1.6;
+      tp.x += shift;
+      tl.x += shift;
+    }
 
     const dying = this.state === 'dying' || this.state === 'over';
     const back = 4.8 + this.camBack * 0.4 + (this.powers.rush > 0 ? 0.8 : 0);
@@ -686,6 +712,12 @@ class Game {
       // swing in close to see her dizzy face, leaving room for the score card below
       gp.set(p.x * 0.9, 2.3 + p.ground, 4.0 + this.camBack * 0.4);
       gl.set(p.x, 0.25 + p.ground, 0);
+      if (this.sideways) {
+        gp.x += 1.6;
+        gl.x += 1.6;
+        gp.y -= 0.6;
+        gl.y += 0.45;
+      }
     }
 
     const pos = tp.lerp(gp, b);
@@ -852,6 +884,9 @@ class Game {
     }
   }
 
+  // Lower the graphics for this session only if the game is really struggling.
+  // A steady ~30 fps is usually a phone's frame-rate cap (e.g. Low Power Mode),
+  // so only drop below that counts.
   watchPerf(dt) {
     if (this.forcedQuality || this.state !== 'playing') return;
     const pf = this.perf;
@@ -861,21 +896,17 @@ class Game {
     const fps = pf.frames / pf.t;
     pf.t = 0;
     pf.frames = 0;
-    if (fps < 45 && this.quality !== 'low') {
-      pf.slow++;
-      if (pf.slow >= 1) {
-        this.quality = this.quality === 'high' ? 'medium' : 'low';
-        this.save.quality = this.quality;
-        writeSave(this.save);
-        this.resize();
-        pf.slow = 0;
-      }
+    pf.slow = fps < 26 ? pf.slow + 1 : 0;
+    if (pf.slow >= 2 && this.quality !== 'low') {
+      this.quality = this.quality === 'high' ? 'medium' : 'low';
+      this.resize();
+      pf.slow = 0;
     }
   }
 
   onVisibility() {
     if (document.hidden) {
-      if (this.state === 'playing') this.pause();
+      if (this.state === 'playing' || this.state === 'countdown') this.pause();
       this.audio.suspend();
     } else if (this.state !== 'paused') {
       this.audio.resume();

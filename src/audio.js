@@ -73,7 +73,7 @@ export class AudioEngine {
       this.nextTime = ctx.currentTime + 0.1;
       this.timer = setInterval(() => this.schedule(), 30);
     }
-    if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+    if (this.ctx.state !== 'running') this.ctx.resume().catch(() => {});
   }
 
   suspend() {
@@ -81,7 +81,7 @@ export class AudioEngine {
   }
 
   resume() {
-    if (this.ctx && this.ctx.state === 'suspended') {
+    if (this.ctx && this.ctx.state !== 'running') {
       this.ctx.resume().catch(() => {});
       this.nextTime = Math.max(this.nextTime, this.ctx.currentTime + 0.05);
     }

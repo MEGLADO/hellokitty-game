@@ -304,7 +304,9 @@ export class Track {
     o.meshes.length = 0;
   }
 
-  reset(dist) {
+  // origin: where this run started, so difficulty ramps per run
+  reset(dist, origin = dist) {
+    this.origin = origin;
     for (const o of this.obstacles) this.release(o);
     this.obstacles = [];
     this.items = [];
@@ -417,7 +419,8 @@ export class Track {
   }
 
   // ---------- patterns ----------
-  spawnPattern(s, dist, speed) {
+  spawnPattern(s, absDist, speed) {
+    const dist = absDist - this.origin; // metres into this run
     const lanes = [-1, 0, 1];
     const shuffle = (a) => {
       for (let i = a.length - 1; i > 0; i--) {
@@ -532,7 +535,7 @@ export class Track {
       }
       case 'zigzag': {
         const seq = Math.random() < 0.5 ? [-1, 0, 1] : [1, 0, -1];
-        const gap = Math.max(8, speed * 0.45);
+        const gap = Math.max(10, speed * 0.55);
         seq.forEach((l, i) => this.addObstacle('block', l, s + i * gap));
         // hearts weave through the open lanes
         seq.forEach((l, i) => {
@@ -575,8 +578,10 @@ export class Track {
     this.nextS = dist + 185;
   }
 
-  beginRush(dist) {
+  beginRush(dist, lane = 0) {
     this.rushing = true;
+    this.rushLane = lane;
+    this.nextS = dist + 45;
     // clear far-away obstacles so the landing zone is open
     this.obstacles = this.obstacles.filter((o) => {
       if (o.sa > dist + 45) {
@@ -586,12 +591,13 @@ export class Track {
       return true;
     });
     this.items = this.items.filter((it) => it.s < dist + 45);
-    this.nextS = Math.max(this.nextS, dist + 8);
   }
 
   endRush(dist) {
     this.rushing = false;
-    this.nextS = Math.max(this.nextS, dist + 60);
+    // sky hearts she can't reach any more
+    this.items = this.items.filter((it) => !(it.y > 4 && it.s > dist));
+    this.nextS = dist + 60;
   }
 
   // ---------- per-frame ----------
@@ -599,12 +605,14 @@ export class Track {
     // spawn
     while (this.nextS < dist + SPAWN_AHEAD) {
       if (this.rushing) {
-        const lane = [-1, 0, 1][Math.floor(Math.random() * 3)];
-        this.addLine(lane, this.nextS, 5, 2.4, 5.4);
-        this.nextS += 14;
+        // a trail of sky hearts that starts in Kitty's lane and weaves one lane at a time
+        this.addLine(this.rushLane, this.nextS, 6, 2.4, 5.4);
+        this.nextS += 14.4;
+        const step = Math.random() < 0.5 ? -1 : 1;
+        this.rushLane = Math.max(-1, Math.min(1, this.rushLane + (this.rushLane === 0 ? step : -this.rushLane)));
       } else {
         const len = this.spawnPattern(this.nextS, dist, speed);
-        const gap = Math.max(speed * 0.72, 26 - Math.min(1, dist / 3000) * 12);
+        const gap = Math.max(speed * 0.72, 26 - Math.min(1, (dist - this.origin) / 3000) * 12);
         this.nextS += len + gap;
       }
     }

@@ -258,13 +258,20 @@ export class Kitty {
     if (!this.rainbowBow) M.bow.color.set(outfit.bow);
     M.overalls.color.set(outfit.overalls);
     M.shirt.color.set(outfit.shirt);
-    // accessory
+    // accessories are built once and reused
     while (this.acc.children.length) this.acc.remove(this.acc.children[0]);
-    const acc = outfit.acc;
-    if (acc === 'flower') {
-      const g = new THREE.Group();
+    if (outfit.acc) this.acc.add(this.accessory(outfit.acc));
+    if (outfit.acc === 'flower') M.acc.color.set(0xffa3cf);
+    if (outfit.acc === 'crown') M.acc.color.set(0xff4f97);
+  }
+
+  accessory(kind) {
+    const cache = (this.accCache ||= {});
+    if (cache[kind]) return cache[kind];
+    const M = this.mats;
+    const g = new THREE.Group();
+    if (kind === 'flower') {
       const petal = new THREE.SphereGeometry(0.075, 12, 10);
-      M.acc.color.set(0xffa3cf);
       for (let i = 0; i < 5; i++) {
         const a = (i / 5) * Math.PI * 2;
         const p = this.add(g, petal, M.acc, true);
@@ -275,38 +282,37 @@ export class Kitty {
       c.position.z = -0.02;
       g.position.set(0.36, 0.28, -0.2);
       g.rotation.y = 0.5;
-      this.acc.add(g);
-    } else if (acc === 'sailor') {
-      const g = new THREE.Group();
-      const hat = this.add(g, new THREE.CylinderGeometry(0.2, 0.23, 0.13, 24), toonMat(0xffffff), true);
+    } else if (kind === 'sailor') {
+      const white = toonMat(0xffffff);
+      const hat = this.add(g, new THREE.CylinderGeometry(0.2, 0.23, 0.13, 24), white, true);
       hat.position.y = 0.06;
       const band = this.add(g, new THREE.CylinderGeometry(0.235, 0.235, 0.05, 24), toonMat(0x1f3170));
       band.position.y = 0.02;
-      const brim = this.add(g, new THREE.TorusGeometry(0.23, 0.035, 8, 24), toonMat(0xffffff), true);
+      const brim = this.add(g, new THREE.TorusGeometry(0.23, 0.035, 8, 24), white, true);
       brim.rotation.x = Math.PI / 2;
       g.position.set(0.12, 0.43, 0.02);
       g.rotation.z = -0.22;
-      this.acc.add(g);
-    } else if (acc === 'star') {
-      const s = this.add(this.acc, starGeometry(0.34), M.accGlow, true);
+    } else if (kind === 'star') {
+      const s = this.add(g, starGeometry(0.34), M.accGlow, true);
       s.position.set(0.34, 0.3, -0.12);
       s.rotation.set(0, 0.4, -0.2);
-    } else if (acc === 'crown') {
-      const g = new THREE.Group();
+    } else if (kind === 'crown') {
       const ring = this.add(g, new THREE.CylinderGeometry(0.19, 0.2, 0.1, 24, 1, true), M.gold, true);
       ring.position.y = 0.05;
+      const spikeGeo = new THREE.ConeGeometry(0.05, 0.14, 8);
+      const gemGeo = new THREE.SphereGeometry(0.03, 8, 6);
       for (let i = 0; i < 5; i++) {
         const a = (i / 5) * Math.PI * 2;
-        const spike = this.add(g, new THREE.ConeGeometry(0.05, 0.14, 8), M.gold);
+        const spike = this.add(g, spikeGeo, M.gold);
         spike.position.set(Math.cos(a) * 0.19, 0.16, Math.sin(a) * 0.19);
-        const gem = this.add(g, new THREE.SphereGeometry(0.03, 8, 6), M.acc);
+        const gem = this.add(g, gemGeo, M.acc);
         gem.position.set(Math.cos(a) * 0.2, 0.05, Math.sin(a) * 0.2);
       }
-      M.acc.color.set(0xff4f97);
       g.position.set(0.1, 0.44, 0);
       g.rotation.z = -0.18;
-      this.acc.add(g);
     }
+    cache[kind] = g;
+    return g;
   }
 
   // Kicks for squash & stretch.

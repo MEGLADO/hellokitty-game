@@ -35,7 +35,7 @@ export class UI {
       if (!el) return;
       el.addEventListener('click', (e) => {
         e.preventDefault();
-        g.audio.unlock();
+        if (g.state !== 'paused') g.audio.unlock();
         fn();
       });
     };

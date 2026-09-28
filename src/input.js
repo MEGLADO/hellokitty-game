@@ -20,8 +20,10 @@ export class Input {
       let action;
       if (Math.abs(dx) > Math.abs(dy)) action = dx > 0 ? 'right' : 'left';
       else action = dy > 0 ? 'down' : 'up';
-      this.onAction(action);
-      // allow chaining another swipe without lifting the finger
+      // one action per direction per touch, so a long swipe moves one lane;
+      // a new direction (like right then up) still chains without lifting
+      if (action !== a.last) this.onAction(action);
+      a.last = action;
       a.x = e.clientX;
       a.y = e.clientY;
       e.preventDefault();

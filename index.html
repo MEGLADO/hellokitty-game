@@ -212,7 +212,7 @@ body {
 .ribbon span::after { right: -18px; clip-path: polygon(0 0, 100% 0, 66% 50%, 100% 100%, 0 100%); }
 
 .title-bottom { display: flex; flex-direction: column; align-items: center; gap: 16px; width: 100%; max-width: 420px; }
-.title-bottom .row { flex-wrap: nowrap; gap: 10px; }
+.title-bottom .row { gap: 10px; }
 .title-bottom .row .btn.round { width: 50px; height: 50px; }
 .title-bottom .row #btn-wardrobe { padding-left: 18px; padding-right: 20px; }
 .chips { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
@@ -409,21 +409,18 @@ body {
 .stat span { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-soft); }
 .stat b { font-size: 22px; font-weight: 900; color: var(--ink); font-variant-numeric: tabular-nums; }
 .new-best {
-  position: absolute;
-  top: -20px;
-  right: -8px;
-  margin: 0;
+  margin: -4px 0 -6px;
   font-family: var(--display);
   font-size: 16px;
   color: #fff;
   background: var(--red);
   padding: 8px 14px;
   border-radius: 12px;
-  transform: rotate(8deg);
+  transform: rotate(-4deg);
   box-shadow: 0 0 0 3px #fff, 0 4px 0 3px #a50a20;
   animation: wiggle 0.9s ease-in-out infinite;
 }
-@keyframes wiggle { 0%, 100% { transform: rotate(8deg); } 50% { transform: rotate(2deg) scale(1.08); } }
+@keyframes wiggle { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(2deg) scale(1.08); } }
 
 /* ---------- wardrobe ---------- */
 .w-head { display: flex; align-items: center; justify-content: space-between; width: 100%; max-width: 420px; gap: 12px; }
@@ -479,14 +476,45 @@ body {
 .debug { position: fixed; left: 8px; bottom: calc(var(--sab) + 6px); font: 600 11px/1.2 ui-monospace, monospace; color: #4a2440; background: rgba(255, 255, 255, 0.7); padding: 2px 6px; border-radius: 6px; z-index: 50; pointer-events: none; }
 .debug:empty { display: none; }
 
+/* sideways phones and tablets: menus on the right, Kitty on the left */
+@media (min-aspect-ratio: 23/20) {
+  #title, #wardrobe { align-items: flex-end; justify-content: center; gap: 14px; }
+  #title .logo, #title .title-bottom, #wardrobe .w-head, #wardrobe .w-bottom { width: min(50vw, 440px); max-width: none; }
+  #over { align-items: flex-end; justify-content: center; }
+  #over .panel { width: min(50vw, 380px); }
+  .logo { margin-top: 0; }
+}
+
 /* short landscape phones */
 @media (max-height: 520px) {
-  .logo-line { font-size: 44px; -webkit-text-stroke-width: 7px; }
+  .logo-line { font-size: 40px; -webkit-text-stroke-width: 7px; }
+  .ribbon span { font-size: 15px; padding: 6px 16px 7px; }
+  .chip { font-size: 14px; padding: 5px 12px 5px 8px; }
+  .fineprint { display: none; }
+  .title-bottom .row .btn.round { width: 46px; height: 46px; }
+  .btn.alt { font-size: 15px; }
+  .stats .stat { padding: 6px 4px; }
+  .stat b { font-size: 18px; }
+  .w-info { padding: 8px 10px; }
+  .w-bottom { gap: 8px; }
   .ribbon { margin-top: 6px; }
   .title-bottom { gap: 8px; }
   .btn.big { font-size: 24px; padding: 13px 44px 15px; }
   .panel { gap: 10px; padding: 16px 16px 16px; }
   .panel h2 { font-size: 30px; }
+}
+
+/* very short screens (small phones held sideways) */
+@media (max-height: 340px) {
+  .logo-line { font-size: 30px; -webkit-text-stroke-width: 6px; text-shadow: 0 4px 0 var(--red); }
+  .ribbon { display: none; }
+  .chips { display: none; }
+  .btn.big { font-size: 20px; padding: 10px 34px 12px; }
+  .title-bottom { gap: 8px; }
+  .panel { gap: 8px; padding: 12px; }
+  .panel h2 { font-size: 24px; }
+  .title-bottom .lbl { display: none; }
+  .title-bottom #btn-wardrobe { width: 46px; height: 46px; padding: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -521,7 +549,7 @@ body {
     </div>
     <button id="btn-play" class="btn big" type="button">Play</button>
     <div class="row">
-      <button id="btn-wardrobe" class="btn alt" type="button"><svg class="ico" viewBox="0 0 120 80" aria-hidden="true"><ellipse cx="32" cy="40" rx="30" ry="24" fill="currentColor" transform="rotate(-12 32 40)"/><ellipse cx="88" cy="40" rx="30" ry="24" fill="currentColor" transform="rotate(12 88 40)"/><circle cx="60" cy="41" r="15" fill="currentColor" stroke="#fff" stroke-width="6"/></svg>Wardrobe</button>
+      <button id="btn-wardrobe" class="btn alt" type="button"><svg class="ico" viewBox="0 0 120 80" aria-hidden="true"><ellipse cx="32" cy="40" rx="30" ry="24" fill="currentColor" transform="rotate(-12 32 40)"/><ellipse cx="88" cy="40" rx="30" ry="24" fill="currentColor" transform="rotate(12 88 40)"/><circle cx="60" cy="41" r="15" fill="currentColor" stroke="#fff" stroke-width="6"/></svg><span class="lbl">Wardrobe</span></button>
       <button id="btn-music" class="btn alt round" type="button" aria-label="Music on"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 17.5a3 3 0 1 1-2-2.83V5l12-2v11.5a3 3 0 1 1-2-2.83V6.3L9 7.6z" fill="currentColor"/></svg></button>
       <button id="btn-sound" class="btn alt round" type="button" aria-label="Sound effects on"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path class="waves" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg></button>
       <button id="btn-help" class="btn alt round" type="button" aria-label="How to play"><span class="q">?</span></button>
@@ -621,7 +649,7 @@ body {
 </section>
 
 <div id="debug" class="debug"></div>
-<script type="module" src="dist/game.js?v=44b9daadd8"></script>
+<script type="module" src="dist/game.js?v=7dc7f65f14"></script>
 <script>
   // If the game can't download, say so instead of loading forever.
   setTimeout(function () {
