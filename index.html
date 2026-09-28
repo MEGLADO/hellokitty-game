@@ -622,5 +622,13 @@ body {
 
 <div id="debug" class="debug"></div>
 <script type="module" src="dist/game.js?v=44b9daadd8"></script>
+<script>
+  // If the game can't download, say so instead of loading forever.
+  setTimeout(function () {
+    if (window.__game) return;
+    var t = document.querySelector('#loading .loading-text');
+    if (t && t.textContent.indexOf('Loading') === 0) t.textContent = 'Still loading… check your internet connection, then refresh the page.';
+  }, 20000);
+</script>
 </body>
 </html>

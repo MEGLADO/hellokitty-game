@@ -83,7 +83,7 @@ npm run serve     # http://localhost:8080
 
 - `src/` has the game: `main.js` (game loop and states), `kitty.js`, `world.js`, `track.js`, `particles.js`, `fx.js`, `audio.js`, `ui.js`
 - `node tools/track-check.mjs` generates kilometres of track and checks that every stretch can be passed
-- `node tools/smoke-test.mjs <out-dir> <scenario>` plays the game in a phone-sized headless browser and saves screenshots (scenarios: `run`, `night`, `crash`, `wardrobe`, `gallery`, `mechanics`, `bot`)
+- `node tools/smoke-test.mjs <out-dir> <scenario>` plays the game in a phone-sized headless browser and saves screenshots (scenarios: `run`, `night`, `crash`, `wardrobe`, `gallery`, `mechanics`, `bot`, `flow`)
 - Handy URL options: `?debug` shows FPS, `?quality=low|medium|high` forces graphics quality
 
 ## Credits
