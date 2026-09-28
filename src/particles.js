@@ -2,11 +2,12 @@ import * as THREE from 'three';
 import { BEND_PARS, BEND_APPLY, bendUniforms } from './bend.js';
 
 // Sprite ids in the atlas
-export const SP = { GLOW: 0, STAR: 1, HEART: 2, SPARKLE: 3, CONFETTI: 4, RING: 5, PETAL: 6, PUFF: 7 };
+export const SP = { GLOW: 0, STAR: 1, HEART: 2, SPARKLE: 3, CONFETTI: 4, RING: 5, PETAL: 6, PUFF: 7, BUTTERFLY: 8, STREAK: 9, GEM: 10, WISP: 11 };
 
-const VERT = /* glsl */ `
+const vert = (bend) => /* glsl */ `
 ${BEND_PARS}
 uniform float uScale;
+uniform float uTime;
 attribute vec3 aColor;
 attribute float aSize;
 attribute float aAlpha;
@@ -18,12 +19,14 @@ varying float vSprite;
 varying float vRot;
 void main() {
   vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-  ${BEND_APPLY}
+  ${bend ? BEND_APPLY : ''}
   gl_Position = projectionMatrix * mvPosition;
   gl_PointSize = aSize * uScale / max(-mvPosition.z, 0.2);
   vColor = aColor;
   vAlpha = aAlpha;
   vSprite = aSprite;
+  // butterflies flap between two frames
+  if (aSprite > 7.5 && aSprite < 8.5 && sin(uTime * 22.0 + position.x * 3.1 + position.y * 5.3) < 0.0) vSprite = 12.0;
   vRot = aRot;
 }`;
 
@@ -41,7 +44,7 @@ void main() {
   if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) discard;
   float col = mod(vSprite, 4.0);
   float row = floor(vSprite / 4.0);
-  vec2 uv = vec2((col + p.x) / 4.0, 1.0 - (row + p.y) / 2.0);
+  vec2 uv = vec2((col + p.x) / 4.0, 1.0 - (row + p.y) / 4.0);
   vec4 t = texture2D(uAtlas, uv);
   float a = t.a * vAlpha;
   if (a < 0.004) discard;
@@ -49,7 +52,7 @@ void main() {
 }`;
 
 class System {
-  constructor(max, atlas, blending) {
+  constructor(max, atlas, blending, bend = true) {
     this.max = max;
     this.count = 0;
     const g = new THREE.BufferGeometry();
@@ -85,10 +88,10 @@ class System {
     g.setAttribute('aRot', attr(this.rot, 1));
     g.setDrawRange(0, 0);
     this.geo = g;
-    this.uniforms = { uAtlas: { value: atlas }, uScale: { value: 500 }, ...bendUniforms };
+    this.uniforms = { uAtlas: { value: atlas }, uScale: { value: 500 }, uTime: { value: 0 }, ...bendUniforms };
     this.mat = new THREE.ShaderMaterial({
       uniforms: this.uniforms,
-      vertexShader: VERT,
+      vertexShader: vert(bend),
       fragmentShader: FRAG,
       transparent: true,
       depthWrite: false,
@@ -150,6 +153,7 @@ class System {
   }
 
   update(dt, worldDz, time) {
+    this.uniforms.uTime.value = time;
     for (let i = 0; i < this.count; i++) {
       this.life[i] += dt;
       const L = this.maxLife[i];
@@ -190,8 +194,13 @@ export class Particles {
     this.add = new System(900, atlas, THREE.AdditiveBlending);
     this.norm = new System(700, atlas, THREE.NormalBlending);
     this.norm.points.renderOrder = 4;
+    // sky effects (fireworks) ignore the curved-world bend
+    this.sky = new System(700, atlas, THREE.AdditiveBlending, false);
+    this.sky.points.renderOrder = -7;
     scene.add(this.norm.points);
     scene.add(this.add.points);
+    scene.add(this.sky.points);
+    this.rockets = [];
     this.scale = 1;
     this.time = 0;
   }
@@ -199,12 +208,58 @@ export class Particles {
   setScale(v) {
     this.add.uniforms.uScale.value = v;
     this.norm.uniforms.uScale.value = v;
+    this.sky.uniforms.uScale.value = v;
   }
 
   update(dt, worldDz) {
     this.time += dt;
+    this.updateRockets(dt);
     this.add.update(dt, worldDz, this.time);
     this.norm.update(dt, worldDz, this.time);
+    this.sky.update(dt, 0, this.time);
+  }
+
+  // ---- fireworks ----
+  // Launch a rocket from (x, y0, z) that bursts after `delay` seconds.
+  firework(x, y0, z, color, delay = 0.9, onBurst) {
+    this.rockets.push({ x, y: y0, z, vy: 26 + Math.random() * 6, t: delay, color, onBurst, trail: 0 });
+  }
+
+  updateRockets(dt) {
+    for (let i = this.rockets.length - 1; i >= 0; i--) {
+      const r = this.rockets[i];
+      r.t -= dt;
+      r.vy *= 1 - dt * 0.9;
+      r.y += r.vy * dt;
+      r.trail -= dt;
+      if (r.trail <= 0) {
+        r.trail = 0.016;
+        this.sky.emit({ x: r.x, y: r.y, z: r.z, vy: -1, color: [1.5, 1.2, 0.9], size: 1.6, sizeEnd: 0.4, sprite: SP.STREAK, rot: 0, life: 0.45, world: false });
+      }
+      if (r.t <= 0) {
+        this.burstSky(r.x, r.y, r.z, r.color);
+        if (r.onBurst) r.onBurst();
+        this.rockets.splice(i, 1);
+      }
+    }
+  }
+
+  burstSky(x, y, z, color) {
+    const n = 90;
+    const alt = color.map((v) => Math.min(2, v * 0.6 + 0.8));
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const b = Math.acos(2 * Math.random() - 1);
+      const sp = 16 + Math.random() * 4;
+      this.sky.emit({
+        x, y, z,
+        vx: Math.sin(b) * Math.cos(a) * sp, vy: Math.cos(b) * sp, vz: Math.sin(b) * Math.sin(a) * sp * 0.5,
+        color: i % 4 === 0 ? alt : color, size: 2.8, sizeEnd: 0.5, sprite: i % 3 ? SP.GLOW : SP.SPARKLE,
+        life: 1.6 + Math.random() * 0.8, gravity: 3, drag: 1.1, world: false, twinkle: i % 5 === 0 ? 14 : 0,
+      });
+    }
+    this.sky.emit({ x, y, z, color, size: 4, sizeEnd: 26, sprite: SP.RING, life: 0.55, world: false, rot: 0 });
+    this.sky.emit({ x, y, z, color: [2, 2, 2], size: 14, sizeEnd: 3, sprite: SP.GLOW, life: 0.35, world: false });
   }
 
   // -------- effects --------

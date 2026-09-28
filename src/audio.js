@@ -27,6 +27,15 @@ const MELODY = [
   [[0, 76, 4], [4, 72, 4], [8, 79, 6]],
 ];
 
+// One musical style per world: the same tune, re-orchestrated.
+// shift: semitones; the new style starts on the next bar.
+const STYLES = [
+  { name: 'candy', bpm: 128, shift: 0 }, // music box + synth pop
+  { name: 'garden', bpm: 124, shift: 2 }, // marimba picnic with shakers
+  { name: 'clouds', bpm: 112, shift: 5 }, // dreamy bells and pads
+  { name: 'carnival', bpm: 138, shift: -2 }, // calliope oom-pah
+];
+
 export class AudioEngine {
   constructor() {
     this.ctx = null;
@@ -36,6 +45,8 @@ export class AudioEngine {
     this.step = 0;
     this.nextTime = 0;
     this.bpm = 128;
+    this.style = 0;
+    this.nextStyle = 0;
     this.combo = 0;
     this.lastHeart = 0;
     this.timer = null;
@@ -99,6 +110,11 @@ export class AudioEngine {
 
   setMode(mode) {
     this.mode = mode;
+  }
+
+  // Switch the music to a world's style (on the next bar).
+  setWorld(i) {
+    this.nextStyle = ((i % STYLES.length) + STYLES.length) % STYLES.length;
   }
 
   impulse(sec) {
@@ -170,8 +186,13 @@ export class AudioEngine {
   // ---------- music ----------
   schedule() {
     if (!this.ctx || this.ctx.state !== 'running') return;
-    const spb = 60 / this.bpm / 4; // seconds per 16th
+    let spb = 60 / this.bpm / 4; // seconds per 16th
     while (this.nextTime < this.ctx.currentTime + 0.14) {
+      if (this.step % 16 === 0 && this.nextStyle !== this.style) {
+        this.style = this.nextStyle;
+        this.bpm = STYLES[this.style].bpm;
+        spb = 60 / this.bpm / 4;
+      }
       if (this.mode !== 'off' && this.musicOn) this.playStep(this.step, this.nextTime);
       this.step = (this.step + 1) % (16 * 8);
       this.nextTime += spb;
@@ -183,33 +204,93 @@ export class AudioEngine {
     const s = step % 16;
     const game = this.mode === 'game';
     const bus = this.musicBus;
-    const chord = CHORDS[bar];
-    // melody (music box)
-    for (const [st, m, len] of MELODY[bar]) {
-      if (st === s) {
-        const dur = (len * 60) / this.bpm / 4 + 0.25;
-        this.tone(t, mtof(m), dur, { type: 'triangle', gain: 0.16, bus, verb: 0.5 });
-        this.tone(t, mtof(m + 12), 0.18, { type: 'sine', gain: 0.05, bus, verb: 0.4 });
-      }
+    const st = STYLES[this.style];
+    const k = st.shift;
+    const chord = CHORDS[bar].map((n) => n + k);
+    const bass = BASS[bar] + k;
+    const sixteenth = 60 / this.bpm / 4;
+    const notes = MELODY[bar].filter((n) => n[0] === s);
+    if (st.name === 'garden') this.garden(t, s, bar, notes, chord, bass, game, bus, sixteenth);
+    else if (st.name === 'clouds') this.clouds(t, s, bar, notes, chord, bass, game, bus, sixteenth);
+    else if (st.name === 'carnival') this.carnival(t, s, bar, notes, chord, bass, game, bus, sixteenth);
+    else this.candy(t, s, bar, notes, chord, bass, game, bus, sixteenth);
+  }
+
+  kick(t, bus, gain = 0.5) {
+    this.tone(t, 150, 0.16, { type: 'sine', gain, bus, slideTo: 45 });
+  }
+
+  // Candy Town: music box lead over synth-pop drums
+  candy(t, s, bar, notes, chord, bass, game, bus, sx) {
+    const k = STYLES[0].shift;
+    for (const [, m, len] of notes) {
+      this.tone(t, mtof(m + k), len * sx + 0.25, { type: 'triangle', gain: 0.16, bus, verb: 0.5 });
+      this.tone(t, mtof(m + k + 12), 0.18, { type: 'sine', gain: 0.05, bus, verb: 0.4 });
     }
-    // chord stabs on the off-beats
-    if (s % 4 === 2) {
-      for (const n of chord) this.tone(t, mtof(n + 12), 0.14, { type: 'square', gain: game ? 0.035 : 0.022, bus, filter: 1800 });
-    }
-    // bass
-    if (s % 4 === 0 || (game && s % 4 === 3 && s !== 15)) {
-      const b = BASS[bar] + (s === 8 ? 7 : 0);
-      this.tone(t, mtof(b), 0.22, { type: 'triangle', gain: game ? 0.28 : 0.16, bus });
-    }
+    if (s % 4 === 2) for (const n of chord) this.tone(t, mtof(n + 12), 0.14, { type: 'square', gain: game ? 0.035 : 0.022, bus, filter: 1800 });
+    if (s % 4 === 0 || (game && s % 4 === 3 && s !== 15)) this.tone(t, mtof(bass + (s === 8 ? 7 : 0)), 0.22, { type: 'triangle', gain: game ? 0.28 : 0.16, bus });
     if (!game) {
       if (s === 0) this.tone(t, mtof(chord[0] + 24), 0.8, { type: 'sine', gain: 0.03, bus, verb: 0.6 });
       return;
     }
-    // drums
-    if (s === 0 || s === 8 || s === 10) this.tone(t, 150, 0.16, { type: 'sine', gain: 0.5, bus, slideTo: 45 });
+    if (s === 0 || s === 8 || s === 10) this.kick(t, bus);
     if (s === 4 || s === 12) this.noise(t, 0.16, { gain: 0.22, type: 'bandpass', freq: 1800, q: 0.8, bus });
     if (s % 2 === 0) this.noise(t, 0.04, { gain: s % 4 === 2 ? 0.09 : 0.05, type: 'highpass', freq: 7000, bus });
     if (s === 14 && bar % 2 === 1) this.tone(t, mtof(88), 0.12, { type: 'sine', gain: 0.05, bus, verb: 0.6 });
+  }
+
+  // Strawberry Garden: wooden marimba, bouncy bass, claps and a shaker
+  garden(t, s, bar, notes, chord, bass, game, bus, sx) {
+    const k = STYLES[1].shift;
+    for (const [, m] of notes) {
+      this.tone(t, mtof(m + k), 0.42, { type: 'sine', gain: 0.2, bus, verb: 0.3 });
+      this.tone(t, mtof(m + k + 24), 0.07, { type: 'sine', gain: 0.035, bus });
+      // a soft echo a dotted eighth later
+      this.tone(t + sx * 3, mtof(m + k + 12), 0.25, { type: 'sine', gain: 0.045, bus, verb: 0.5 });
+    }
+    if (s % 4 === 2) for (const n of chord) this.tone(t, mtof(n + 12), 0.12, { type: 'triangle', gain: game ? 0.05 : 0.035, bus });
+    if (s % 4 === 0 || (game && (s === 6 || s === 14))) this.tone(t, mtof(bass + (s === 6 || s === 14 ? 12 : 0)), 0.2, { type: 'triangle', gain: game ? 0.26 : 0.15, bus });
+    if (!game) return;
+    if (s === 0 || s === 8) this.kick(t, bus, 0.45);
+    if (s === 4 || s === 12) {
+      this.noise(t, 0.1, { gain: 0.18, type: 'bandpass', freq: 1500, q: 1.2, bus });
+      this.noise(t + 0.012, 0.1, { gain: 0.12, type: 'bandpass', freq: 1100, q: 1.2, bus });
+    }
+    this.noise(t, 0.05, { gain: s % 2 === 1 ? 0.055 : 0.03, type: 'highpass', freq: 6000, bus });
+  }
+
+  // Cloud Kingdom: dreamy bells, warm pads and sparkly arpeggios
+  clouds(t, s, bar, notes, chord, bass, game, bus, sx) {
+    const k = STYLES[2].shift;
+    for (const [, m, len] of notes) {
+      this.tone(t, mtof(m + k), len * sx + 0.6, { type: 'sine', gain: 0.13, bus, verb: 0.9 });
+      this.tone(t, mtof(m + k + 12), 0.5, { type: 'triangle', gain: 0.025, bus, verb: 0.9 });
+    }
+    if (s === 0) for (const n of chord) this.tone(t, mtof(n), sx * 17, { type: 'sine', gain: 0.035, attack: 0.3, bus, verb: 0.5 });
+    if (s % 2 === 0) this.tone(t, mtof(chord[(s / 2) % 3] + 24), 0.16, { type: 'sine', gain: 0.022, bus, verb: 0.8 });
+    if (s === 0 || s === 8) this.tone(t, mtof(bass), 0.55, { type: 'sine', gain: game ? 0.26 : 0.16, bus });
+    if (!game) return;
+    if (s === 0 || s === 8) this.kick(t, bus, 0.32);
+    if (s === 4 || s === 12) this.noise(t, 0.3, { gain: 0.07, type: 'bandpass', freq: 3000, q: 0.6, bus });
+    if (s % 4 === 2) this.noise(t, 0.05, { gain: 0.04, type: 'highpass', freq: 8000, bus });
+    if (s === 14 && bar % 2 === 1) this.tone(t, mtof(chord[2] + 36), 0.4, { type: 'sine', gain: 0.03, bus, verb: 1 });
+  }
+
+  // Starlight Carnival: calliope organ over an oom-pah bass and tambourine
+  carnival(t, s, bar, notes, chord, bass, game, bus, sx) {
+    const k = STYLES[3].shift;
+    for (const [, m, len] of notes) {
+      const d = Math.min(len * sx, 0.3) + 0.08;
+      this.tone(t, mtof(m + k), d, { type: 'square', gain: 0.075, bus, filter: 2400, verb: 0.25 });
+      this.tone(t, mtof(m + k + 12), d, { type: 'triangle', gain: 0.1, bus, verb: 0.25 });
+    }
+    if (s % 4 === 0) this.tone(t, mtof(bass + (s % 8 === 4 ? 7 : 0)), 0.18, { type: 'triangle', gain: game ? 0.3 : 0.18, bus });
+    if (s % 4 === 2) for (const n of chord) this.tone(t, mtof(n + 12), 0.1, { type: 'square', gain: game ? 0.032 : 0.02, bus, filter: 1600 });
+    if (!game) return;
+    if (s === 0 || s === 8) this.kick(t, bus, 0.45);
+    if (s === 4 || s === 12) this.noise(t, 0.14, { gain: 0.2, type: 'bandpass', freq: 2200, q: 0.7, bus });
+    if (s % 2 === 0) this.noise(t, 0.07, { gain: s % 4 === 2 ? 0.08 : 0.045, type: 'highpass', freq: 8500, bus });
+    if (s === 14) this.tone(t, mtof(chord[1] + 36), 0.15, { type: 'sine', gain: 0.04, bus, verb: 0.5 });
   }
 
   // ---------- sound effects ----------
@@ -311,6 +392,58 @@ export class AudioEngine {
       this.tone(t + dt, mtof(m), 0.3, { type: 'square', gain: 0.06, filter: 3000, verb: 0.4 });
       this.tone(t + dt, mtof(m), 0.3, { type: 'triangle', gain: 0.1, verb: 0.4 });
     }
+  }
+
+  fireworkLaunch() {
+    if (!this.ok()) return;
+    this.tone(this.now(), 500, 0.8, { type: 'sine', gain: 0.025, slideTo: 1500 });
+  }
+
+  fireworkPop() {
+    if (!this.ok()) return;
+    const t = this.now();
+    this.noise(t, 0.35, { gain: 0.22, type: 'lowpass', freq: 900, freqTo: 120 });
+    for (let i = 0; i < 5; i++) this.noise(t + 0.12 + Math.random() * 0.35, 0.05, { gain: 0.05, type: 'highpass', freq: 5000 });
+  }
+
+  milestone() {
+    if (!this.ok()) return;
+    const t = this.now();
+    [79, 84, 88, 91, 96].forEach((m, i) => this.tone(t + i * 0.07, mtof(m), 0.32, { type: 'square', gain: 0.045, filter: 3200, verb: 0.5 }));
+  }
+
+  boing() {
+    if (!this.ok()) return;
+    const t = this.now();
+    this.tone(t, 160, 0.45, { type: 'sine', gain: 0.3, slideTo: 620 });
+    this.tone(t + 0.02, 320, 0.3, { type: 'triangle', gain: 0.08, slideTo: 1240 });
+  }
+
+  dash() {
+    if (!this.ok()) return;
+    const t = this.now();
+    this.noise(t, 0.5, { gain: 0.22, type: 'bandpass', freq: 300, freqTo: 4000, q: 0.9 });
+    [60, 67, 72, 79].forEach((m, i) => this.tone(t + i * 0.05, mtof(m + 12), 0.2, { type: 'square', gain: 0.05, filter: 2400 }));
+  }
+
+  smash() {
+    if (!this.ok()) return;
+    const t = this.now();
+    this.noise(t, 0.2, { gain: 0.28, type: 'bandpass', freq: 1400, freqTo: 300, q: 0.7 });
+    this.tone(t, 900, 0.18, { type: 'triangle', gain: 0.1, slideTo: 1800, verb: 0.4 });
+  }
+
+  mission() {
+    if (!this.ok()) return;
+    const t = this.now();
+    [76, 79, 84, 88, 91, 96].forEach((m, i) => this.tone(t + i * 0.06, mtof(m), 0.4, { type: 'triangle', gain: 0.12, verb: 0.6 }));
+  }
+
+  revive() {
+    if (!this.ok()) return;
+    const t = this.now();
+    [60, 64, 67, 72, 76, 79, 84].forEach((m, i) => this.tone(t + i * 0.05, mtof(m), 0.35, { type: 'sine', gain: 0.14, verb: 0.7 }));
+    this.noise(t, 0.8, { gain: 0.06, type: 'highpass', freq: 4000, freqTo: 12000 });
   }
 
   buy() {

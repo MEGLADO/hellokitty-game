@@ -1,12 +1,17 @@
 import * as THREE from 'three';
 import { toonMat, basicMat, glossMat, rimUniforms } from './materials.js';
-import { part, merge, xf, paint, heartGeometry, cloudGeometry, paintedBow } from './geom.js';
-import { roadTexture, grassTexture, stripeTexture, fenceTexture } from './textures.js';
+import { part, merge, heartGeometry, cloudGeometry } from './geom.js';
+import * as P from './props.js';
+import {
+  roadTexture, grassTexture, stripeTexture, fenceTexture, gardenRoadTexture, cloudRoadTexture, carnivalRoadTexture,
+  meadowTexture, cloudSeaTexture, carnivalGroundTexture, multiStripeTexture, emptyTexture,
+} from './textures.js';
 import { bendUniforms } from './bend.js';
-import { PALETTES, PALETTE_LENGTH, PALETTE_BLEND } from './config.js';
+import { PALETTES, BIOMES, ZONE_LEN, ZONE_BLEND } from './config.js';
 
 const ROAD_LEN = 280;
 const ROAD_Z0 = 22; // near end of the ground strips (behind the camera)
+const CANDY = 0, GARDEN = 1, CLOUDS = 2, CARNIVAL = 3;
 
 function mulberry(seed) {
   return () => {
@@ -18,98 +23,50 @@ function mulberry(seed) {
   };
 }
 
-// ---------- prop geometry ----------
-
-function stripedPole(h, r, a, b, bands, y0 = 0) {
-  const parts = [];
-  const seg = h / bands;
-  for (let i = 0; i < bands; i++) {
-    parts.push(part(new THREE.CylinderGeometry(r, r, seg, 10, 1, true), i % 2 ? a : b, { y: y0 + seg * (i + 0.5) }));
-  }
-  return parts;
-}
-
-function lampGeometry() {
-  const parts = stripedPole(2.9, 0.085, '#ff5f9e', '#ffffff', 10);
-  // candy-cane hook arcing toward +x
-  const hook = new THREE.TorusGeometry(0.32, 0.085, 8, 18, Math.PI);
-  parts.push(part(hook, '#ff5f9e', { x: 0.32, y: 2.9 }));
-  parts.push(part(new THREE.CylinderGeometry(0.1, 0.16, 0.18, 12), '#ffffff', { x: 0.64, y: 2.8 }));
-  parts.push(part(new THREE.CylinderGeometry(0.17, 0.2, 0.12, 12), '#ffffff', { y: 0.06 }));
-  return merge(parts);
-}
-
-function cottonTreeGeometry() {
-  const parts = stripedPole(1.7, 0.13, '#ffe3f0', '#ffffff', 3);
-  const blobs = [
-    [0, 2.25, 0, 0.95], [0.6, 1.95, 0.2, 0.62], [-0.55, 2.02, -0.15, 0.66], [0.1, 2.85, 0.1, 0.62], [-0.15, 1.85, 0.5, 0.5],
-  ];
-  for (const [x, y, z, r] of blobs) parts.push(part(new THREE.SphereGeometry(1, 12, 8), '#ffffff', { x, y, z, s: r }));
-  return merge(parts);
-}
-
-function lollipopGeometry() {
-  const parts = [part(new THREE.CylinderGeometry(0.07, 0.07, 2.3, 8), '#ffffff', { y: 1.15 })];
-  const rings = [[0.85, 0.18, '#ff6fae'], [0.66, 0.2, '#ffffff'], [0.47, 0.22, '#ff6fae'], [0.29, 0.24, '#ffffff'], [0.12, 0.26, '#ff6fae']];
-  for (const [r, t, c] of rings) parts.push(part(new THREE.CylinderGeometry(r, r, t, 22), c, { y: 2.9, rx: Math.PI / 2 }));
-  parts.push(paintedBow('#7fd6ff', { s: 0.5, y: 2.12, z: 0.1 }));
-  return merge(parts);
-}
-
-function houseGeometry(wall, roof, door) {
-  const parts = [];
-  parts.push(part(new THREE.BoxGeometry(2.6, 2.0, 2.4), wall, { y: 1.0 }));
-  parts.push(part(new THREE.ConeGeometry(2.15, 1.55, 4), roof, { y: 2.77, ry: Math.PI / 4 }));
-  parts.push(part(new THREE.BoxGeometry(0.34, 0.8, 0.34), '#ffffff', { x: -0.6, y: 3.1, z: -0.4 }));
-  parts.push(part(new THREE.BoxGeometry(0.42, 0.14, 0.42), roof, { x: -0.6, y: 3.52, z: -0.4 }));
-  // front faces +x (toward the road)
-  parts.push(part(new THREE.BoxGeometry(0.1, 1.05, 0.66), door, { x: 1.31, y: 0.53 }));
-  parts.push(part(new THREE.SphereGeometry(0.05, 8, 6), '#ffd23f', { x: 1.38, y: 0.55, z: 0.18 }));
-  for (const z of [-0.78, 0.78]) {
-    parts.push(part(new THREE.BoxGeometry(0.08, 0.62, 0.62), '#ffffff', { x: 1.31, y: 1.3, z }));
-    parts.push(part(new THREE.BoxGeometry(0.1, 0.48, 0.48), '#bfe8ff', { x: 1.32, y: 1.3, z }));
-    parts.push(part(new THREE.BoxGeometry(0.12, 0.14, 0.7), '#ffb3d1', { x: 1.34, y: 0.92, z }));
-  }
-  parts.push(part(heartGeometry(0.42), '#ff4f97', { x: 1.34, y: 1.35, ry: Math.PI / 2 }));
-  return merge(parts);
-}
-
-function mushroomGeometry() {
-  const parts = [part(new THREE.CylinderGeometry(0.2, 0.26, 0.6, 12), '#fff4ea', { y: 0.3 })];
-  parts.push(part(new THREE.SphereGeometry(0.62, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), '#ff5577', { y: 0.55, sy: 0.75 }));
-  const dots = [[0.3, 0.8, 0.2], [-0.25, 0.85, 0.25], [0.05, 1.0, -0.1], [-0.3, 0.75, -0.3], [0.32, 0.72, -0.28], [0, 0.78, 0.45]];
-  for (const [x, y, z] of dots) parts.push(part(new THREE.SphereGeometry(0.09, 8, 6), '#ffffff', { x, y, z }));
-  return merge(parts);
-}
-
-function bushGeometry() {
-  const parts = [];
-  const blobs = [[0, 0.45, 0, 0.6], [0.5, 0.35, 0.1, 0.45], [-0.5, 0.38, -0.05, 0.48], [0.1, 0.7, 0.05, 0.42]];
-  for (const [x, y, z, r] of blobs) parts.push(part(new THREE.SphereGeometry(1, 10, 7), '#9fe8b4', { x, y, z, s: r }));
-  const flowers = [[0.3, 0.9, 0.3], [-0.4, 0.75, 0.35], [0.6, 0.6, 0.4], [-0.1, 1.05, -0.1], [0, 0.55, 0.55]];
-  flowers.forEach(([x, y, z], i) => parts.push(part(new THREE.SphereGeometry(0.1, 8, 6), i % 2 ? '#ff8fc0' : '#fff38a', { x, y, z })));
-  return merge(parts);
-}
-
-function balloonGeometry() {
-  const parts = [part(heartGeometry(1.0, 0.3), '#ffffff', {})];
-  parts.push(part(new THREE.CylinderGeometry(0.012, 0.012, 1.8, 4), '#ffffff', { y: -1.35 }));
-  return merge(parts);
+// A material that shows `map` up to a world-space z and `uMapB` beyond it, so
+// the road, grass, curbs and fences switch style exactly at a world border.
+function zonify(m, mapB) {
+  const zone = { uMapB: { value: mapB }, uZoneZ: { value: -1e6 } };
+  const prev = m.onBeforeCompile;
+  const prevKey = m.customProgramCacheKey();
+  m.onBeforeCompile = (shader, renderer) => {
+    prev.call(m, shader, renderer);
+    shader.uniforms.uMapB = zone.uMapB;
+    shader.uniforms.uZoneZ = zone.uZoneZ;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vZoneZ;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvZoneZ = ( modelMatrix * vec4( transformed, 1.0 ) ).z;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform sampler2D uMapB;\nuniform float uZoneZ;\nvarying float vZoneZ;')
+      .replace(
+        '#include <map_fragment>',
+        `#ifdef USE_MAP
+          vec4 sampledDiffuseColor = vZoneZ < uZoneZ ? texture2D( uMapB, vMapUv ) : texture2D( map, vMapUv );
+          diffuseColor *= sampledDiffuseColor;
+        #endif`
+      );
+  };
+  m.customProgramCacheKey = () => prevKey + '-zone';
+  m.userData.zone = zone;
+  return m;
 }
 
 // ---------- scrolling instanced props ----------
 
 class Scroller {
-  // meshes: InstancedMesh[] that share transforms. place(inst, rand) fills x/y/rotY/scale/color.
-  constructor(meshes, count, spacing, place, seed) {
+  // meshes: InstancedMesh[] sharing transforms. place(it, rand, i) fills x/y/ry/sc/color.
+  // biomes: which worlds this prop appears in (null = all).
+  constructor(world, meshes, count, spacing, place, seed, biomes = null) {
+    this.world = world;
     this.meshes = meshes;
     this.count = count;
     this.spacing = spacing;
     this.span = count * spacing;
     this.place = place;
+    this.biomes = biomes;
     this.rand = mulberry(seed);
     this.items = [];
-    for (let i = 0; i < count; i++) this.items.push({ s: 0, x: 0, y: 0, ry: 0, sc: 1, sy: 1, bob: 0, phase: 0 });
+    for (let i = 0; i < count; i++) this.items.push({ s: 0, x: 0, y: 0, ry: 0, rz: 0, sc: 1, sy: 1, bob: 0, phase: 0, hidden: false });
     this.m = new THREE.Matrix4();
     this.q = new THREE.Quaternion();
     this.e = new THREE.Euler();
@@ -127,6 +84,7 @@ class Scroller {
 
   respawn(it, i) {
     this.place(it, this.rand, i);
+    it.hidden = !!this.biomes && !this.biomes.includes(this.world.biomeAt(it.s));
     if (!it.color) return;
     for (const mesh of this.meshes) {
       mesh.setColorAt(i, it.color);
@@ -136,6 +94,7 @@ class Scroller {
 
   update(dist, time) {
     const { m, q, e, v, sv } = this;
+    let shown = false;
     for (let i = 0; i < this.count; i++) {
       const it = this.items[i];
       let z = dist - it.s;
@@ -144,14 +103,72 @@ class Scroller {
         this.respawn(it, i);
         z = dist - it.s;
       }
-      e.set(0, it.ry, 0);
+      if (it.hidden) {
+        sv.set(0, 0, 0);
+      } else {
+        shown = true;
+        sv.set(it.sc, it.sc * it.sy, it.sc);
+      }
+      e.set(0, it.ry, it.rz);
       q.setFromEuler(e);
       v.set(it.x, it.y + (it.bob ? Math.sin(time * 1.4 + it.phase) * it.bob : 0), z);
-      sv.set(it.sc, it.sc * it.sy, it.sc);
       m.compose(v, q, sv);
       for (const mesh of this.meshes) mesh.setMatrixAt(i, m);
     }
-    for (const mesh of this.meshes) mesh.instanceMatrix.needsUpdate = true;
+    for (const mesh of this.meshes) {
+      mesh.visible = shown;
+      if (shown) mesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+}
+
+// Big one-off set pieces (ferris wheels, carousels) that animate.
+class Landmarks {
+  constructor(world, make, count, spacing, place, animate, seed, biomes) {
+    this.world = world;
+    this.count = count;
+    this.spacing = spacing;
+    this.span = count * spacing;
+    this.place = place;
+    this.animate = animate;
+    this.biomes = biomes;
+    this.rand = mulberry(seed);
+    this.items = [];
+    for (let i = 0; i < count; i++) {
+      const obj = make();
+      obj.visible = false;
+      world.scene.add(obj);
+      this.items.push({ obj, s: 0, x: 0, ry: 0, sc: 1, hidden: true });
+    }
+  }
+
+  reset(dist) {
+    this.items.forEach((it, i) => {
+      it.s = dist - 22 + i * this.spacing + this.rand() * this.spacing * 0.5;
+      this.respawn(it);
+    });
+  }
+
+  respawn(it) {
+    this.place(it, this.rand);
+    it.hidden = !this.biomes.includes(this.world.biomeAt(it.s));
+  }
+
+  update(dist, time) {
+    for (const it of this.items) {
+      let z = dist - it.s;
+      if (z > 40) {
+        it.s += this.span;
+        this.respawn(it);
+        z = dist - it.s;
+      }
+      it.obj.visible = !it.hidden && z > -230;
+      if (!it.obj.visible) continue;
+      it.obj.position.set(it.x, 0, z);
+      it.obj.rotation.y = it.ry;
+      it.obj.scale.setScalar(it.sc);
+      this.animate(it.obj, time);
+    }
   }
 }
 
@@ -161,25 +178,68 @@ export class World {
   constructor(scene, renderer) {
     this.scene = scene;
     this.renderer = renderer;
+    this.origin = 0;
     const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
     this.pal = {};
+    this.glowMats = [];
     this.buildLights();
     this.buildSky();
     this.buildBackground();
     this.buildGround(aniso);
     this.buildProps();
-    this.paletteIndex = -1;
+    this.zonePair = -1;
     this.setPalette(0);
+  }
+
+  // ---------- zones ----------
+  zoneIndexAt(s) {
+    return Math.max(0, Math.floor((s - this.origin) / ZONE_LEN));
+  }
+
+  biomeAt(s) {
+    return this.zoneIndexAt(s) % BIOMES.length;
+  }
+
+  // Palette position for the kitty at distance `dist` (blends into the next world).
+  paletteAt(dist) {
+    const zi = this.zoneIndexAt(dist);
+    const within = dist - this.origin - zi * ZONE_LEN;
+    let f = (within - (ZONE_LEN - ZONE_BLEND)) / ZONE_BLEND;
+    f = Math.min(1, Math.max(0, f));
+    return zi + f * f * (3 - 2 * f);
   }
 
   buildLights() {
     this.hemi = new THREE.HemisphereLight(0xffffff, 0xffc0dd, 1.2);
     this.scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight(0xffffff, 1.7);
-    this.sun.position.set(4, 10, 7);
+    this.sun.position.set(7, 18, 11);
+    this.sun.target.position.set(0, 0, -12);
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
     this.scene.fog = new THREE.Fog(0xffd8ec, 42, 140);
+  }
+
+  // Real-time shadows around Kitty (the world scrolls, so the light stays put).
+  setShadows(size) {
+    const sun = this.sun;
+    sun.castShadow = size > 0;
+    if (!size) return;
+    sun.shadow.mapSize.set(size, size);
+    const cam = sun.shadow.camera;
+    cam.left = -16;
+    cam.right = 16;
+    cam.top = 26;
+    cam.bottom = -26;
+    cam.near = 2;
+    cam.far = 70;
+    cam.updateProjectionMatrix();
+    sun.shadow.bias = -0.0008;
+    sun.shadow.normalBias = 0.04;
+    if (sun.shadow.map) {
+      sun.shadow.map.dispose();
+      sun.shadow.map = null;
+    }
   }
 
   buildSky() {
@@ -226,7 +286,6 @@ export class World {
     this.sky = sky;
     this.scene.add(sky);
 
-    // stars
     const n = 520;
     const pos = new Float32Array(n * 3);
     const tw = new Float32Array(n);
@@ -278,7 +337,6 @@ export class World {
     const bg = (this.bg = new THREE.Group());
     this.scene.add(bg);
 
-    // rainbow arc
     this.rainbowUniforms = { uAlpha: { value: 0.6 } };
     const rb = new THREE.Mesh(
       new THREE.TorusGeometry(300, 26, 6, 80, Math.PI),
@@ -320,7 +378,6 @@ export class World {
     this.rainbow = rb;
     bg.add(rb);
 
-    // distant hills
     const hillMat = toonMat(0xffffff, { fog: false, bend: false });
     const hillGeo = new THREE.SphereGeometry(1, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2);
     const hillDefs = [
@@ -339,7 +396,6 @@ export class World {
     this.hills.frustumCulled = false;
     bg.add(this.hills);
 
-    // dream castle on the horizon
     const castle = [];
     const pink = '#ffc4df', rose = '#ff6fae', white = '#fff7fb', gold = '#ffd23f';
     castle.push(part(new THREE.BoxGeometry(36, 26, 14), white, { y: 13 }));
@@ -358,7 +414,6 @@ export class World {
     this.castle.rotation.y = 0.18;
     bg.add(this.castle);
 
-    // high clouds
     const cloudGeos = [cloudGeometry(1), cloudGeometry(2), cloudGeometry(5)];
     const cloudMat = toonMat(0xffffff, { vertexColors: true, fog: false, bend: false, emissive: 0xffe6f2, emissiveIntensity: 0.25 });
     this.skyClouds = [];
@@ -373,51 +428,66 @@ export class World {
       this.skyClouds.push(m);
     }
     this.cloudMat = cloudMat;
-    this.bgMats = [hillMat, this.castle.material, cloudMat];
   }
 
   buildGround(aniso) {
-    // grass
-    this.grassTex = grassTexture(aniso);
-    this.grassTex.repeat.set(20, ROAD_LEN / 12);
+    // one texture per world; the zone shader switches between them
+    this.sets = [];
+    const set = (textures, repeatX, repeatY, scroll) => {
+      for (const t of textures) {
+        t.wrapS = t.wrapS === THREE.ClampToEdgeWrapping && repeatX === 1 ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
+        t.wrapT = THREE.RepeatWrapping;
+        t.repeat.set(repeatX, repeatY);
+      }
+      const s = { textures, scroll, mats: [] };
+      this.sets.push(s);
+      return s;
+    };
+
+    this.groundSet = set([grassTexture(aniso), meadowTexture(aniso), cloudSeaTexture(aniso), carnivalGroundTexture(aniso)], 20, ROAD_LEN / 12, (t, d) => (t.offset.y = (d / 12) % 1));
     const grassGeo = new THREE.PlaneGeometry(240, ROAD_LEN, 1, 140);
     grassGeo.rotateX(-Math.PI / 2);
     grassGeo.translate(0, -0.02, ROAD_Z0 - ROAD_LEN / 2);
-    this.grass = new THREE.Mesh(grassGeo, toonMat(0xffffff, { map: this.grassTex }));
+    const grassMat = zonify(toonMat(0xffffff, { map: this.groundSet.textures[0] }), this.groundSet.textures[1]);
+    this.groundSet.mats.push(grassMat);
+    this.grass = new THREE.Mesh(grassGeo, grassMat);
     this.grass.frustumCulled = false;
+    this.grass.receiveShadow = true;
     this.scene.add(this.grass);
 
-    // road
-    this.roadTex = roadTexture(aniso);
-    this.roadTex.repeat.set(1, ROAD_LEN / 8);
+    this.roadSet = set([roadTexture(aniso), gardenRoadTexture(aniso), cloudRoadTexture(aniso), carnivalRoadTexture(aniso)], 1, ROAD_LEN / 8, (t, d) => (t.offset.y = (d / 8) % 1));
     const roadGeo = new THREE.PlaneGeometry(7.4, ROAD_LEN, 1, 160);
     roadGeo.rotateX(-Math.PI / 2);
     roadGeo.translate(0, 0.0, ROAD_Z0 - ROAD_LEN / 2);
-    this.road = new THREE.Mesh(roadGeo, toonMat(0xffffff, { map: this.roadTex }));
+    const roadMat = zonify(toonMat(0xffffff, { map: this.roadSet.textures[0] }), this.roadSet.textures[1]);
+    this.roadSet.mats.push(roadMat);
+    this.road = new THREE.Mesh(roadGeo, roadMat);
     this.road.frustumCulled = false;
+    this.road.receiveShadow = true;
     this.scene.add(this.road);
 
-    // candy-cane curbs
-    this.curbTex = stripeTexture();
-    this.curbTex.repeat.set(2, ROAD_LEN / 1.2);
+    this.curbSet = set(
+      [stripeTexture('#ff5f9e', '#ffffff'), stripeTexture('#ff5d73', '#fff4e6'), multiStripeTexture(['#ff9aae', '#ffc896', '#fff08e', '#aef2bd', '#9fd6ff', '#cdb3ff']), stripeTexture('#ffd23f', '#7d5fd8')],
+      2, ROAD_LEN / 1.2, (t, d) => (t.offset.y = -(d / 1.2) % 1)
+    );
     const curbGeo = new THREE.CylinderGeometry(0.17, 0.17, ROAD_LEN, 12, 160, true);
     curbGeo.rotateX(Math.PI / 2);
-    const curbMat = toonMat(0xffffff, { map: this.curbTex });
-    this.curbs = [];
+    const curbMat = zonify(toonMat(0xffffff, { map: this.curbSet.textures[0] }), this.curbSet.textures[1]);
+    this.curbSet.mats.push(curbMat);
     for (const side of [-1, 1]) {
       const c = new THREE.Mesh(curbGeo, curbMat);
       c.position.set(side * 3.78, 0.13, ROAD_Z0 - ROAD_LEN / 2);
       c.frustumCulled = false;
+      c.receiveShadow = true;
       this.scene.add(c);
-      this.curbs.push(c);
     }
 
-    // picket fences
-    this.fenceTex = fenceTexture(aniso);
-    this.fenceTex.repeat.set(ROAD_LEN / 4, 1);
+    const fence = fenceTexture(aniso);
+    this.fenceSet = set([fence, fence, emptyTexture(), fence], ROAD_LEN / 4, 1, (t, d) => (t.offset.x = (d / 4) % 1));
     const fenceGeo = new THREE.PlaneGeometry(ROAD_LEN, 0.85, 140, 1);
     fenceGeo.rotateY(Math.PI / 2);
-    const fenceMat = toonMat(0xffffff, { map: this.fenceTex, alphaTest: 0.5, side: THREE.DoubleSide });
+    const fenceMat = zonify(toonMat(0xffffff, { map: fence, alphaTest: 0.5, side: THREE.DoubleSide }), fence);
+    this.fenceSet.mats.push(fenceMat);
     for (const side of [-1, 1]) {
       const f = new THREE.Mesh(fenceGeo, fenceMat);
       f.position.set(side * 5.6, 0.42, ROAD_Z0 - ROAD_LEN / 2);
@@ -428,86 +498,78 @@ export class World {
 
   buildProps() {
     const S = (this.scrollers = []);
-    const inst = (geo, mat, n, color = false) => {
+    const inst = (geo, mat, n, color = false, shadow = false) => {
       const m = new THREE.InstancedMesh(geo, mat, n);
       if (color) m.setColorAt(0, new THREE.Color(1, 1, 1));
+      m.castShadow = shadow;
       this.scene.add(m);
       return m;
     };
     const vc = (opts = {}) => toonMat(0xffffff, { vertexColors: true, ...opts });
-
-    // candy-cane lamps on both sides, every 14 units
-    const lampN = 22;
-    const lamps = inst(lampGeometry(), vc(), lampN);
-    this.bulbMat = basicMat(new THREE.Color(1, 1, 1));
-    const bulbGeo = new THREE.SphereGeometry(0.2, 12, 10);
-    bulbGeo.translate(0.64, 2.6, 0);
-    const bulbs = inst(bulbGeo, this.bulbMat, lampN);
-    S.push(new Scroller([lamps, bulbs], lampN, 7, (it, r, i) => {
+    const glow = (base) => {
+      const m = basicMat(new THREE.Color(base));
+      m.userData.base = new THREE.Color(base);
+      this.glowMats.push(m);
+      return m;
+    };
+    const add = (meshes, count, spacing, place, seed, biomes) => S.push(new Scroller(this, meshes, count, spacing, place, seed, biomes));
+    const sideLamp = (it, r, i) => {
       const side = i % 2 === 0 ? -1 : 1;
       it.x = side * 4.35;
       it.y = 0;
       it.ry = side < 0 ? 0 : Math.PI;
       it.sc = 1;
-    }, 11));
-
-    // cotton candy trees
-    const treeColors = ['#ffb3d6', '#d9c2ff', '#b8f0d9', '#ffd6b8', '#bfe3ff', '#ffc2e9'].map((c) => new THREE.Color(c));
-    const trees = inst(cottonTreeGeometry(), vc(), 26, true);
-    S.push(new Scroller([trees], 26, 7.5, (it, r) => {
+    };
+    const anySide = (min, spread) => (it, r) => {
       const side = r() < 0.5 ? -1 : 1;
-      it.x = side * (7 + r() * 14);
+      it.x = side * (min + r() * spread);
       it.y = 0;
       it.ry = r() * 6.28;
+    };
+
+    // ---- lamps, one style per world
+    add([inst(P.candyLamp(), vc(), 22, false, true), inst(P.candyLampBulb(), glow('#fff2c8'), 22)], 22, 7, sideLamp, 11, [CANDY]);
+    add([inst(P.tulipLamp(), vc(), 22, false, true), inst(P.tulipLampBulb(), glow('#ffe0ec'), 22)], 22, 7, sideLamp, 12, [GARDEN]);
+    add([inst(P.starLamp(), vc(), 22, false, true), inst(P.starLampGlow(), glow('#fff0a0'), 22)], 22, 7, sideLamp, 13, [CLOUDS]);
+    const lanternColors = ['#ffb3d6', '#ffe28a', '#aee4ff', '#d6b8ff'].map((c) => new THREE.Color(c));
+    add([inst(P.carnivalLamp(), vc(), 22, false, true), inst(P.lanternGlow(), glow('#ffffff'), 22, true)], 22, 7, (it, r, i) => {
+      sideLamp(it, r, i);
+      it.color = lanternColors[i % lanternColors.length];
+    }, 14, [CARNIVAL]);
+
+    // ---- Candy Town
+    const treeColors = ['#ffb3d6', '#d9c2ff', '#b8f0d9', '#ffd6b8', '#bfe3ff', '#ffc2e9'].map((c) => new THREE.Color(c));
+    add([inst(P.cottonTree(), vc(), 26, true, true)], 26, 7.5, (it, r) => {
+      anySide(7, 14)(it, r);
       it.sc = 0.9 + r() * 0.7;
       it.color = treeColors[Math.floor(r() * treeColors.length)];
-    }, 21));
-
-    // lollipops near the fence
-    const lollis = inst(lollipopGeometry(), vc(), 10);
-    S.push(new Scroller([lollis], 10, 19, (it, r) => {
+    }, 21, [CANDY]);
+    add([inst(P.lollipop(), vc(), 10, false, true)], 10, 19, (it, r) => {
       const side = r() < 0.5 ? -1 : 1;
       it.x = side * (6.4 + r() * 1.2);
       it.y = 0;
       it.ry = (r() - 0.5) * 0.6;
       it.sc = 0.85 + r() * 0.35;
-    }, 31));
-
-    // cottages
-    const houseDefs = [['#fff8f0', '#ff5a6e', '#ff8fb1'], ['#fff2fa', '#ff8fc4', '#8fd3ff'], ['#f3fbff', '#7fb8ff', '#ffd23f']];
-    houseDefs.forEach((d, k) => {
-      const houses = inst(houseGeometry(...d), vc(), 4);
-      S.push(new Scroller([houses], 4, 44, (it, r) => {
+    }, 31, [CANDY]);
+    [['#fff8f0', '#ff5a6e', '#ff8fb1'], ['#fff2fa', '#ff8fc4', '#8fd3ff'], ['#f3fbff', '#7fb8ff', '#ffd23f']].forEach((d, k) => {
+      add([inst(P.cottage(...d), vc(), 4)], 4, 44, (it, r) => {
         const side = r() < 0.5 ? -1 : 1;
         it.x = side * (12 + r() * 9);
         it.y = 0;
         it.ry = (side < 0 ? 0 : Math.PI) + (r() - 0.5) * 0.5;
         it.sc = 0.9 + r() * 0.3;
-      }, 41 + k * 17));
+      }, 41 + k * 17, k === 0 ? [CANDY, GARDEN] : [CANDY]);
     });
-
-    // mushrooms and bushes in the grass
-    const shrooms = inst(mushroomGeometry(), vc(), 14);
-    S.push(new Scroller([shrooms], 14, 11, (it, r) => {
-      const side = r() < 0.5 ? -1 : 1;
-      it.x = side * (6.2 + r() * 10);
-      it.y = 0;
-      it.ry = r() * 6.28;
+    add([inst(P.mushroom(), vc(), 14)], 14, 11, (it, r) => {
+      anySide(6.2, 10)(it, r);
       it.sc = 0.7 + r() * 0.8;
-    }, 51));
-    const bushes = inst(bushGeometry(), vc(), 18);
-    S.push(new Scroller([bushes], 18, 8.5, (it, r) => {
-      const side = r() < 0.5 ? -1 : 1;
-      it.x = side * (5.9 + r() * 12);
-      it.y = 0;
-      it.ry = r() * 6.28;
+    }, 51, [CANDY]);
+    add([inst(P.bush(), vc(), 18)], 18, 8.5, (it, r) => {
+      anySide(5.9, 12)(it, r);
       it.sc = 0.8 + r() * 0.8;
-    }, 61));
-
-    // heart balloons
+    }, 61, [CANDY, GARDEN]);
     const balloonColors = ['#ff4f7e', '#ff8fc4', '#ff6fb5', '#b58cff', '#ffd23f'].map((c) => new THREE.Color(c));
-    const balloons = inst(balloonGeometry(), glossMat(0xffffff, { vertexColors: true, roughness: 0.2 }), 12, true);
-    S.push(new Scroller([balloons], 12, 15, (it, r) => {
+    add([inst(P.heartBalloon(), glossMat(0xffffff, { vertexColors: true, roughness: 0.2, envMapIntensity: 0.6 }), 12, true)], 12, 15, (it, r) => {
       const side = r() < 0.5 ? -1 : 1;
       it.x = side * (6 + r() * 12);
       it.y = 3.5 + r() * 3;
@@ -516,12 +578,94 @@ export class World {
       it.bob = 0.35;
       it.phase = r() * 6;
       it.color = balloonColors[Math.floor(r() * balloonColors.length)];
-    }, 71));
+    }, 71, [CANDY, CARNIVAL]);
 
-    // low clouds drifting beside the road
-    const cloudGeo = cloudGeometry(4);
-    const lowClouds = inst(cloudGeo, toonMat(0xffffff, { vertexColors: true, emissive: 0xfff0f6, emissiveIntensity: 0.3 }), 10);
-    S.push(new Scroller([lowClouds], 10, 22, (it, r) => {
+    // ---- Strawberry Garden
+    add([inst(P.appleTree(), vc(), 22, false, true)], 22, 8.5, (it, r) => {
+      anySide(7.5, 13)(it, r);
+      it.sc = 0.85 + r() * 0.5;
+    }, 81, [GARDEN]);
+    add([inst(P.giantStrawberry(), vc(), 10, false, true)], 10, 17, (it, r) => {
+      const side = r() < 0.5 ? -1 : 1;
+      it.x = side * (6.6 + r() * 4);
+      it.y = 0;
+      it.ry = r() * 6.28;
+      it.rz = side * 0.12;
+      it.sc = 0.8 + r() * 0.5;
+    }, 82, [GARDEN]);
+    add([inst(P.tulipPatch(), vc(), 24)], 24, 6, (it, r) => {
+      anySide(5.9, 3.5)(it, r);
+      it.sc = 0.9 + r() * 0.5;
+    }, 83, [GARDEN]);
+    add([inst(P.giantTeacup(), vc(), 6, false, true)], 6, 30, (it, r) => {
+      anySide(8, 8)(it, r);
+      it.sc = 1.1 + r() * 0.5;
+    }, 84, [GARDEN]);
+    add([inst(P.picnic(), vc(), 6)], 6, 28, (it, r) => {
+      anySide(9, 9)(it, r);
+      it.sc = 1.2 + r() * 0.4;
+    }, 85, [GARDEN]);
+
+    // ---- Cloud Kingdom
+    add([inst(P.cloudPuff(), vc({ emissive: 0xfff0f8, emissiveIntensity: 0.25 }), 40)], 40, 4.3, (it, r, i) => {
+      const side = i % 2 === 0 ? -1 : 1;
+      it.x = side * (5.4 + r() * 1.2);
+      it.y = -0.2 + r() * 0.3;
+      it.ry = r() * 6.28;
+      it.sc = 0.55 + r() * 0.35;
+      it.sy = 0.8;
+    }, 91, [CLOUDS]);
+    add([inst(P.floatingIsland(), vc(), 10, false, true)], 10, 20, (it, r) => {
+      const side = r() < 0.5 ? -1 : 1;
+      it.x = side * (11 + r() * 16);
+      it.y = 3 + r() * 6;
+      it.ry = r() * 6.28;
+      it.sc = 0.8 + r() * 0.6;
+      it.bob = 0.6;
+      it.phase = r() * 6;
+    }, 92, [CLOUDS]);
+    [['#ff8fc4', '#ffffff'], ['#8fd3ff', '#fff08a']].forEach(([a, b], k) => {
+      add([inst(P.hotAirBalloon(a, b), vc(), 6)], 6, 36, (it, r) => {
+        const side = r() < 0.5 ? -1 : 1;
+        it.x = side * (9 + r() * 22);
+        it.y = 7 + r() * 11;
+        it.ry = r() * 6.28;
+        it.sc = 1 + r() * 0.6;
+        it.bob = 0.9;
+        it.phase = r() * 6;
+      }, 93 + k, [CLOUDS]);
+    });
+    // big enough that the camera passes underneath even during Rainbow Rush
+    add([inst(P.rainbowArch(), vc({ emissive: 0xffffff, emissiveIntensity: 0.15 }), 4)], 4, 52, (it) => {
+      it.x = 0;
+      it.y = 0;
+      it.ry = 0;
+      it.sc = 1.25;
+    }, 95, [CLOUDS]);
+
+    // ---- Starlight Carnival
+    const bulbColors = ['#ffd6f0', '#fff2a0', '#a8e8ff', '#ffb0d0', '#ffffff'].map((c) => new THREE.Color(c).multiplyScalar(2.6));
+    this.stringBulbs = inst(P.stringBulb(), basicMat(0xffffff), 300, true);
+    add([this.stringBulbs], 300, 0.58, (it, r, i) => {
+      const side = i % 2 === 0 ? -1 : 1;
+      it.x = side * 4.05;
+      it.y = 0.36;
+      it.ry = 0;
+      it.sc = 1;
+      it.color = bulbColors[(i >> 1) % bulbColors.length];
+    }, 101, [CARNIVAL]);
+    [['#ff6fae', '#ffffff'], ['#8f73e6', '#ffd23f']].forEach(([a, b], k) => {
+      add([inst(P.circusTent(a, b), vc(), 5, false, true)], 5, 38, (it, r) => {
+        const side = r() < 0.5 ? -1 : 1;
+        it.x = side * (10 + r() * 10);
+        it.y = 0;
+        it.ry = side < 0 ? Math.PI / 2 : -Math.PI / 2;
+        it.sc = 1 + r() * 0.4;
+      }, 102 + k, [CARNIVAL]);
+    });
+
+    // ---- everywhere: low clouds drifting beside the road
+    add([inst(cloudGeometry(4), vc({ emissive: 0xfff0f6, emissiveIntensity: 0.3 }), 10)], 10, 22, (it, r) => {
       const side = r() < 0.5 ? -1 : 1;
       it.x = side * (16 + r() * 16);
       it.y = 9 + r() * 7;
@@ -529,21 +673,94 @@ export class World {
       it.sc = 1.2 + r() * 1.4;
       it.bob = 0.5;
       it.phase = r() * 6;
-    }, 81));
+    }, 111, null);
+
+    this.buildLandmarks();
   }
 
-  reset(dist) {
+  buildLandmarks() {
+    const L = (this.landmarks = []);
+    const vcm = toonMat(0xffffff, { vertexColors: true });
+    const fw = P.ferrisWheel();
+    const cabinColors = ['#ff8fc4', '#ffd23f', '#8fd3ff', '#b58cff', '#7fe0c0', '#ff9a6a', '#ffffff', '#ff6fae'].map((c) => new THREE.Color(c));
+    const wheelLights = basicMat(new THREE.Color(2.6, 2.2, 1.6));
+    this.glowMats.push(Object.assign(wheelLights, { userData: { base: new THREE.Color(1.1, 0.95, 0.75), always: 1.5 } }));
+    L.push(new Landmarks(this, () => {
+      const g = new THREE.Group();
+      const stand = new THREE.Mesh(fw.stand, vcm);
+      stand.castShadow = true;
+      g.add(stand);
+      const wheel = new THREE.Group();
+      wheel.position.y = fw.hub;
+      wheel.add(new THREE.Mesh(fw.wheel, vcm));
+      wheel.add(new THREE.Mesh(fw.lights, wheelLights));
+      g.add(wheel);
+      const cabins = new THREE.InstancedMesh(fw.cabin, vcm, 8);
+      cabinColors.forEach((c, i) => cabins.setColorAt(i, c));
+      cabins.frustumCulled = false;
+      g.add(cabins);
+      g.userData = { wheel, cabins, m: new THREE.Matrix4(), p: new THREE.Vector3(), q: new THREE.Quaternion(), s: new THREE.Vector3(1, 1, 1) };
+      return g;
+    }, 2, 170, (it, r) => {
+      const side = r() < 0.5 ? -1 : 1;
+      it.x = side * (22 + r() * 8);
+      it.ry = side * 0.35;
+      it.sc = 1;
+    }, (g, t) => {
+      const u = g.userData;
+      const a = t * 0.22;
+      u.wheel.rotation.z = a;
+      for (let i = 0; i < 8; i++) {
+        const th = a + (i / 8) * Math.PI * 2;
+        u.p.set(Math.cos(th) * fw.radius, fw.hub + Math.sin(th) * fw.radius, 0.1);
+        u.m.compose(u.p, u.q, u.s);
+        u.cabins.setMatrixAt(i, u.m);
+      }
+      u.cabins.instanceMatrix.needsUpdate = true;
+    }, 121, [CARNIVAL]));
+
+    const cz = P.carousel();
+    const riderColors = ['#ff8fc4', '#8fd3ff', '#ffd23f', '#b58cff', '#7fe0c0', '#ffffff'].map((c) => new THREE.Color(c));
+    L.push(new Landmarks(this, () => {
+      const g = new THREE.Group();
+      const base = new THREE.Mesh(cz.base, vcm);
+      base.castShadow = true;
+      g.add(base);
+      const rotor = new THREE.Group();
+      rotor.add(new THREE.Mesh(cz.top, vcm));
+      const riders = new THREE.InstancedMesh(cz.rider, vcm, 6);
+      riderColors.forEach((c, i) => riders.setColorAt(i, c));
+      riders.frustumCulled = false;
+      rotor.add(riders);
+      g.add(rotor);
+      g.userData = { rotor, riders, m: new THREE.Matrix4(), p: new THREE.Vector3(), q: new THREE.Quaternion(), e: new THREE.Euler(), s: new THREE.Vector3(1, 1, 1) };
+      return g;
+    }, 2, 120, (it, r) => {
+      const side = r() < 0.5 ? -1 : 1;
+      it.x = side * (13 + r() * 6);
+      it.ry = 0;
+      it.sc = 1;
+    }, (g, t) => {
+      const u = g.userData;
+      u.rotor.rotation.y = t * 0.6;
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+        u.p.set(Math.cos(a) * 2.6, 1.6 + Math.sin(t * 2.2 + i * 1.7) * 0.45, Math.sin(a) * 2.6);
+        u.e.set(0, -a, 0);
+        u.q.setFromEuler(u.e);
+        u.m.compose(u.p, u.q, u.s);
+        u.riders.setMatrixAt(i, u.m);
+      }
+      u.riders.instanceMatrix.needsUpdate = true;
+    }, 122, [CARNIVAL]));
+  }
+
+  // origin: where world 1 (Candy Town) starts
+  reset(dist, origin = dist) {
+    this.origin = origin;
+    this.zonePair = -1;
     for (const s of this.scrollers) s.reset(dist);
-  }
-
-  paletteAt(dist) {
-    const idx = Math.floor(dist / PALETTE_LENGTH);
-    const within = dist - idx * PALETTE_LENGTH;
-    const start = PALETTE_LENGTH - PALETTE_BLEND;
-    let f = 0;
-    if (within > start) f = (within - start) / PALETTE_BLEND;
-    f = f * f * (3 - 2 * f);
-    return idx + f;
+    for (const l of this.landmarks) l.reset(dist);
   }
 
   // t: float palette index (wraps)
@@ -575,12 +792,16 @@ export class World {
     this.rainbowUniforms.uAlpha.value = num('rainbow');
     rimUniforms.uRimStrength.value = num('rim');
     const lamps = num('lamps');
-    this.bulbMat.color.setRGB(0.95 + lamps * 1.75, 0.82 + lamps * 1.3, 0.62 + lamps * 0.7);
+    for (const m of this.glowMats) {
+      const k = m.userData.always ?? 0.9 + lamps * 1.8;
+      m.color.copy(m.userData.base).multiplyScalar(k);
+    }
     num('bloom');
-    // haze the background toward the horizon colour
+    const hills = num('hills');
+    this.hills.position.y = -(1 - hills) * 75;
     const hz = this.pal.horizon;
+    const tmp = (this._tmp ||= new THREE.Color());
     this.hillColors.forEach((c, i) => {
-      const tmp = (this._tmp ||= new THREE.Color());
       tmp.copy(c).lerp(hz, 0.35);
       this.hills.setColorAt(i, tmp);
     });
@@ -588,16 +809,27 @@ export class World {
     const night = num('stars');
     this.castle.material.color.setRGB(1 - night * 0.45, 1 - night * 0.5, 1 - night * 0.3);
     this.cloudMat.emissiveIntensity = 0.25 * (1 - night * 0.8);
-    this.name = f < 0.5 ? A.name : B.name;
   }
 
   update(dt, dist, camera, time) {
-    // ground texture scroll
-    this.roadTex.offset.y = (dist / 8) % 1;
-    this.grassTex.offset.y = (dist / 12) % 1;
-    this.curbTex.offset.y = -(dist / 1.2) % 1;
-    this.fenceTex.offset.x = (dist / 4) % 1;
+    // which two worlds are on screen, and where the border between them is
+    const camS = dist - 26;
+    const za = this.zoneIndexAt(camS);
+    const borderS = this.origin + (za + 1) * ZONE_LEN;
+    const ba = za % BIOMES.length, bb = (za + 1) % BIOMES.length;
+    for (const set of this.sets) {
+      for (const t of set.textures) set.scroll(t, dist);
+      for (const m of set.mats) {
+        m.map = set.textures[ba];
+        m.userData.zone.uMapB.value = set.textures[bb];
+        m.userData.zone.uZoneZ.value = dist - borderS;
+      }
+    }
+    this.zoneNow = this.zoneIndexAt(dist);
+    this.biomeNow = this.zoneNow % BIOMES.length;
+
     for (const s of this.scrollers) s.update(dist, time);
+    for (const l of this.landmarks) l.update(dist, time);
     this.sky.position.copy(camera.position);
     this.stars.position.copy(camera.position);
     this.stars.rotation.y = time * 0.01;
@@ -607,7 +839,6 @@ export class World {
       c.position.x += c.userData.speed * dt;
       if (c.position.x > 460) c.position.x -= 920;
     }
-    // gentle left/right sway of the road
     bendUniforms.uBendX.value = Math.sin(dist * 0.0045) * 0.0011;
   }
 }

@@ -311,6 +311,9 @@ export class Kitty {
       g.position.set(0.1, 0.44, 0);
       g.rotation.z = -0.18;
     }
+    g.traverse((o) => {
+      if (o.isMesh && o.material !== outlineMat) o.castShadow = true;
+    });
     cache[kind] = g;
     return g;
   }
@@ -454,7 +457,7 @@ export class Kitty {
     this.shadow.position.y = -h + 0.03;
     const ss = 1 / (1 + h * 0.4);
     this.shadow.scale.set(ss, ss, ss);
-    this.shadow.visible = !s.flying;
+    this.shadow.visible = this.useBlob !== false && !s.flying;
 
     // cloud, bubble, halo
     this.cloudAmt = damp(this.cloudAmt, s.flying ? 1 : 0, 6, dt);

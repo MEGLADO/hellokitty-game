@@ -64,6 +64,10 @@ const scenarios = {
   mechanics: 'quality=low&debug',
   flow: 'quality=low',
   regress: 'quality=low',
+  worlds: 'quality=high&debug',
+  juice: 'quality=high&debug',
+  pads: 'quality=low&debug',
+  missions: 'quality=low',
 };
 const q = process.env.Q || scenarios[scenario] || scenarios.run;
 await page.goto(`http://localhost:${port}/index.html?${q}`, { waitUntil: 'load' });
@@ -187,8 +191,17 @@ if (scenario === 'run') {
     g.botLog = [];
     const hardFor = (o, p) => o.type === 'block' || o.type === 'yarn' || (o.type === 'train' && p.y < o.top - 0.3 && !g.track.obstacles.some((r) => r.type === 'ramp' && r.lane === o.lane && Math.abs(r.sb - o.sa) < 0.01));
     g.botStats = { onTrain: 0, jumps: 0, slides: 0 };
+    g.botRevives = [];
     const tick = () => {
       requestAnimationFrame(tick);
+      // take the first "keep going?" of each run, then let the run end
+      if (g.state === 'revive') {
+        if (g.revives < 1) {
+          g.botRevives.push({ metres: Math.round(g.dist - g.runStart), ...g.lastDeath });
+          g.revive();
+        } else g.declineRevive();
+        return;
+      }
       if (g.state !== 'playing') return;
       const p = g.player, t = g.track, d = g.dist, v = Math.max(g.speed, 1);
       if (p.grounded && p.y > 1.9) g.botStats.onTrain++;
@@ -225,6 +238,8 @@ if (scenario === 'run') {
   const final = await page.evaluate(() => ({ dist: Math.round(window.__game.dist - window.__game.runStart), state: window.__game.state }));
   console.log('bot deaths:', deaths.length, JSON.stringify(deaths, null, 0));
   console.log('current run metres:', final.dist, final.state, JSON.stringify(await page.evaluate(() => window.__game.botStats)));
+  console.log('bot revives:', JSON.stringify(await page.evaluate(() => window.__game.botRevives)));
+  console.log('level:', JSON.stringify(await page.evaluate(() => ({ level: window.__game.missions.level, missions: window.__game.missions.list().map((m) => `${m.text} ${m.progress}/${m.target}`) }))));
 } else if (scenario === 'mechanics') {
   await play();
   await wait(2000);
@@ -303,11 +318,13 @@ if (scenario === 'run') {
   console.log('mechanics:', JSON.stringify(summary));
 } else if (scenario === 'flow') {
   const click = (id) => page.evaluate((i) => document.getElementById(i).click(), id);
-  const visible = () => page.evaluate(() => ['title', 'hud', 'pause', 'over', 'wardrobe', 'help'].filter((id) => !document.getElementById(id).hidden).join(','));
+  const visible = () => page.evaluate(() => ['title', 'hud', 'pause', 'over', 'wardrobe', 'help', 'revive', 'missions'].filter((id) => !document.getElementById(id).hidden).join(','));
   const log = async (label) => console.log(label.padEnd(18), (await state()).padEnd(10), await visible());
   await log('start');
   await click('btn-help'); await wait(400); await log('help');
   await click('help-close'); await wait(300); await log('help closed');
+  await click('btn-missions'); await wait(400); await log('missions');
+  await page.mouse.click(20, 20); await wait(300); await log('backdrop closes');
   await click('btn-music'); await click('btn-sound'); await wait(200); await log('muted');
   await click('btn-music'); await click('btn-sound');
   await click('btn-play'); await wait(1500); await log('playing');
@@ -325,7 +342,9 @@ if (scenario === 'run') {
   console.log('save:', JSON.stringify(saveNow));
   await click('w-action'); await wait(1500); await log('play from wardrobe');
   await page.evaluate(() => { const g = window.__game, t = g.track, d = g.dist; t.reset(d); t.nextS = Infinity; t.addObstacle('block', g.player.lane, d + 12); });
-  for (let i = 0; i < 20 && (await state()) !== 'over'; i++) await wait(500);
+  for (let i = 0; i < 20 && (await state()) !== 'revive'; i++) await wait(500);
+  await log('keep going?');
+  await click('btn-norevive'); await wait(600);
   await log('crashed');
   await click('btn-wardrobe2'); await wait(600); await log('over→wardrobe');
   await click('w-back'); await wait(600); await log('back home');
@@ -406,6 +425,155 @@ if (scenario === 'run') {
   await wait(600);
   const geo1 = await g(() => window.__game.renderer.info.memory.geometries);
   check('outfit switching keeps geometry count flat', geo1 - geo0 < 40, `(${geo0} -> ${geo1})`);
+} else if (scenario === 'worlds') {
+  // one run per world (and one looking at a border), using the start offset
+  const starts = [['candy', 0], ['garden', 650], ['clouds', 1250], ['carnival', 1850], ['border', 540]];
+  for (const [name, start] of starts) {
+    await page.evaluate((st) => {
+      const g = window.__game;
+      g.god = true;
+      g.startOffset = st;
+      if (g.state !== 'title') g.goHome();
+      document.getElementById('btn-play').click();
+    }, start);
+    await wait(4200);
+    await shot(`02-${name}`);
+    const info2 = await page.evaluate(() => ({ biome: window.__game.world.biomeNow, zone: window.__game.world.zoneNow, calls: window.__game.drawCalls }));
+    console.log(name, JSON.stringify(info2));
+  }
+} else if (scenario === 'juice') {
+  // carnival at night with fireworks, hearts flying into the counter, shadows
+  await page.evaluate(() => { const g = window.__game; g.god = true; g.startOffset = 1880; document.getElementById('btn-play').click(); });
+  await wait(2500);
+  await page.evaluate(() => { const g = window.__game; g.fireworks(5); const t = g.track; t.addLine(g.player.lane, g.dist + 6, 12, 1.6); });
+  await wait(1700);
+  await shot('02-fireworks');
+  await wait(1500);
+  await shot('03-carnival');
+  await page.evaluate(() => { const g = window.__game; g.startOffset = 0; g.goHome(); document.getElementById('btn-play').click(); });
+  await wait(2500);
+  await page.evaluate(() => { const g = window.__game, t = g.track, d = g.dist; t.addObstacle('train', 1, d + 9, { cars: 2 }); t.addObstacle('block', -1, d + 12, { kind: 'cupcake' }); t.addLine(g.player.lane, d + 4, 10, 1.4); });
+  await wait(1300);
+  await shot('04-shadows-combo');
+  console.log('info:', JSON.stringify(await info()));
+} else if (scenario === 'pads') {
+  // a jelly trampoline and a Sugar Dash pad in Kitty's lane, no god mode
+  await play();
+  await wait(1500);
+  const d0 = await page.evaluate(() => {
+    const g = window.__game, t = g.track, d = g.dist;
+    t.reset(d, g.runStart); t.nextS = Infinity;
+    const lane = g.player.lane;
+    t.addObstacle('jelly', lane, d + 18);
+    t.addObstacle('block', lane, d + 26, { kind: 'cake' });
+    t.addObstacle('boost', lane, d + 48);
+    t.addObstacle('block', lane, d + 60, { kind: 'gift' });
+    t.addObstacle('barrier', lane, d + 70);
+    g.padLog = [];
+    g.smashN = 0;
+    const smash0 = g.smash.bind(g);
+    g.smash = (o) => { g.smashN++; smash0(o); };
+    const tick = () => { requestAnimationFrame(tick); g.padLog.push([+g.player.y.toFixed(2), g.powers.dash > 0 ? 1 : 0, g.state, +g.dist.toFixed(1)]); };
+    tick();
+    return d;
+  });
+  await wait(250);
+  await shot('01b-jelly-ahead');
+  let shotJelly = false, shotDash = false, shotPad = false;
+  for (let i = 0; i < 300; i++) {
+    await wait(200);
+    const st = await page.evaluate(() => ({ y: window.__game.player.y, dash: window.__game.powers.dash, dist: window.__game.dist, state: window.__game.state }));
+    if (!shotPad && st.dist > d0 + 34 && st.y < 0.5) { await shot('02b-pad-ahead'); shotPad = true; }
+    if (!shotJelly && st.y > 3) { await shot('02-bounce'); shotJelly = true; }
+    if (!shotDash && st.dash > 0) { await wait(300); await shot('03-dash'); shotDash = true; }
+    if (st.dist > d0 + 80 || st.state !== 'playing') break;
+  }
+  await wait(500);
+  const log = await page.evaluate((d0) => {
+    const L = window.__game.padLog;
+    let maxY = 0;
+    for (const x of L) maxY = Math.max(maxY, x[0]);
+    return { frames: L.length, travelled: +(window.__game.dist - d0).toFixed(1), maxY, dashed: L.some((x) => x[1]), state: window.__game.state, smashed: window.__game.smashN };
+  }, d0);
+  console.log('pads:', JSON.stringify(log));
+} else if (scenario === 'missions') {
+  // missions panel, completing a full set mid-run, then the revive offer
+  await page.evaluate(() => {
+    const g = window.__game;
+    g.save.missions = [
+      { id: 'jumps', target: 2, progress: 0, done: false },
+      { id: 'jelly', target: 1, progress: 0, done: false },
+      { id: 'hearts', target: 5, progress: 0, done: false },
+    ];
+    g.ui.level(g.missions.level, g.missions.doneCount());
+  });
+  await page.evaluate(() => document.getElementById('btn-missions').click());
+  await wait(900);
+  await shot('02-panel');
+  await page.evaluate(() => document.getElementById('m-close').click());
+  await play();
+  await wait(1500);
+  await page.keyboard.press('ArrowUp');
+  await wait(1500);
+  await page.keyboard.press('ArrowUp');
+  await wait(700);
+  await shot('03-mission-done');
+  await page.evaluate(() => {
+    const g = window.__game, t = g.track, d = g.dist;
+    t.reset(d, g.runStart); t.nextS = Infinity;
+    t.addObstacle('jelly', g.player.lane, d + 14);
+    t.addLine(g.player.lane, d + 40, 8);
+  });
+  for (let i = 0; i < 100; i++) {
+    await wait(200);
+    if (await page.evaluate(() => window.__game.missions.level) > 1) break;
+  }
+  await wait(1200);
+  await shot('04-level-up');
+  const lv = await page.evaluate(() => ({ level: window.__game.missions.level, mult: document.getElementById('h-mult').textContent, hidden: document.getElementById('h-mult').hidden, bank: window.__game.save.hearts, list: window.__game.missions.list().map((m) => m.text) }));
+  console.log('level:', JSON.stringify(lv));
+  // crash into a cake: the revive offer should appear
+  await page.evaluate(() => {
+    const g = window.__game, t = g.track, d = g.dist;
+    t.reset(d, g.runStart); t.nextS = Infinity;
+    t.addObstacle('block', g.player.lane, d + 16, { kind: 'cake' });
+    t.addObstacle('barrier', g.player.lane, d + 30);
+  });
+  for (let i = 0; i < 100; i++) {
+    await wait(200);
+    if ((await state()) === 'revive') break;
+  }
+  await wait(600);
+  await shot('05-revive');
+  const before = await page.evaluate(() => ({ bank: window.__game.save.hearts, run: window.__game.runHearts, cost: window.__game.reviveCost() }));
+  await page.evaluate(() => document.getElementById('btn-revive').click());
+  await wait(400);
+  await shot('06-revived');
+  for (let i = 0; i < 60; i++) {
+    await wait(200);
+    if ((await state()) === 'playing') break;
+  }
+  await wait(1500);
+  const after = await page.evaluate(() => ({ state: window.__game.state, bank: window.__game.save.hearts, run: window.__game.runHearts, revives: window.__game.revives, cost: window.__game.reviveCost(), obstaclesNear: window.__game.track.obstacles.filter((o) => !o.remove && o.sa < window.__game.dist + 20).length }));
+  console.log('revive:', JSON.stringify({ before, after }));
+  await shot('07-running-again');
+  // crash again and let the offer time out
+  await page.evaluate(() => {
+    const g = window.__game, t = g.track, d = g.dist;
+    t.reset(d, g.runStart); t.nextS = Infinity;
+    g.player.invincible = 0;
+    t.addObstacle('block', g.player.lane, d + 16, { kind: 'gift' });
+  });
+  for (let i = 0; i < 150; i++) {
+    await wait(200);
+    if ((await state()) === 'over') break;
+  }
+  await wait(1200);
+  await shot('08-over');
+  console.log('final:', JSON.stringify(await info()), await state());
+  await page.evaluate(() => document.getElementById('btn-home2').click());
+  await wait(1200);
+  await shot('09-title');
 } else if (scenario === 'wardrobe') {
   await page.evaluate(() => document.getElementById('btn-wardrobe').click());
   await wait(2000);

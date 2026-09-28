@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { toonMat, glossMat } from './materials.js';
 import { part, merge, xf, paint, heartGeometry, starGeometry, appleGeometry, paintedBow } from './geom.js';
 import { BEND_PARS, BEND_APPLY, bendUniforms } from './bend.js';
-import { LANE_W, KITTY_HW, KITTY_HD, SPAWN_AHEAD, DESPAWN_BEHIND, JUMP_V, GRAVITY } from './config.js';
+import { LANE_W, KITTY_HW, KITTY_HD, SPAWN_AHEAD, DESPAWN_BEHIND, JUMP_V, GRAVITY, JELLY_V } from './config.js';
 
 const TRAIN_TOP = 2.1;
 const CAR_LEN = 7;
@@ -165,6 +165,56 @@ function yarnModel() {
   return merge(p);
 }
 
+// Gummy trampoline: squishy dome with a lighter top.
+function jellyModel() {
+  const p = [];
+  p.push(part(new THREE.SphereGeometry(1, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2), '#ff5fa8', { sx: 0.95, sy: 0.36, sz: 0.85 }));
+  p.push(part(new THREE.SphereGeometry(1, 24, 10, 0, Math.PI * 2, 0, Math.PI / 2), '#ff9fcc', { sx: 0.7, sy: 0.3, sz: 0.62, y: 0.08 }));
+  p.push(part(new THREE.SphereGeometry(0.12, 8, 6), '#ffffff', { x: -0.35, y: 0.33, z: -0.18, sy: 0.5 }));
+  p.push(part(new THREE.SphereGeometry(0.08, 8, 6), '#ffffff', { x: -0.12, y: 0.37, z: -0.3, sy: 0.5 }));
+  p.push(part(new THREE.TorusGeometry(0.93, 0.07, 6, 32), '#ffffff', { y: 0.03, rx: Math.PI / 2, sz: 0.9 }));
+  return merge(p);
+}
+
+// Glowing chevrons that give a Sugar Dash.
+function boostModel() {
+  const rounded = (w, d, r) => {
+    const sh = new THREE.Shape();
+    sh.moveTo(-w / 2 + r, -d / 2);
+    sh.lineTo(w / 2 - r, -d / 2);
+    sh.quadraticCurveTo(w / 2, -d / 2, w / 2, -d / 2 + r);
+    sh.lineTo(w / 2, d / 2 - r);
+    sh.quadraticCurveTo(w / 2, d / 2, w / 2 - r, d / 2);
+    sh.lineTo(-w / 2 + r, d / 2);
+    sh.quadraticCurveTo(-w / 2, d / 2, -w / 2, d / 2 - r);
+    sh.lineTo(-w / 2, -d / 2 + r);
+    sh.quadraticCurveTo(-w / 2, -d / 2, -w / 2 + r, -d / 2);
+    return sh;
+  };
+  const slab = (w, d, r, h, y, color) => {
+    const g = new THREE.ExtrudeGeometry(rounded(w, d, r), { depth: h, bevelEnabled: false, curveSegments: 5 });
+    xf(g, { rx: -Math.PI / 2, y });
+    return paint(g, color);
+  };
+  // candy-pink rim around a deep berry plate so the chevrons pop
+  const p = [slab(1.8, 2.5, 0.35, 0.03, 0.0, '#ff6fb8'), slab(1.5, 2.2, 0.25, 0.03, 0.02, '#6a2468')];
+  const chev = new THREE.Shape();
+  chev.moveTo(-0.7, 0);
+  chev.lineTo(0, -0.55);
+  chev.lineTo(0.7, 0);
+  chev.lineTo(0.7, 0.28);
+  chev.lineTo(0, -0.27);
+  chev.lineTo(-0.7, 0.28);
+  chev.closePath();
+  for (let i = 0; i < 3; i++) {
+    const g = new THREE.ExtrudeGeometry(chev, { depth: 0.05, bevelEnabled: false });
+    // lay flat, pointing down the road (-z)
+    xf(g, { rx: -Math.PI / 2, y: 0.05, z: 0.75 - i * 0.7 });
+    p.push(paint(g, i === 1 ? '#ffe46a' : '#ff8fd0'));
+  }
+  return merge(p);
+}
+
 // ---------------- collectible models ----------------
 
 function appleModel() {
@@ -219,6 +269,8 @@ function bubbleMaterial() {
 // ---------------- the track ----------------
 
 const OB = {
+  jelly: { hw: 0.9, minY: 0, maxY: 0.36, hd: 0.8 },
+  boost: { hw: 0.85, minY: 0, maxY: 0.1, hd: 1.2 },
   barrier: { hw: 0.95, minY: 0, maxY: 0.85, hd: 0.22 },
   gate: { hw: 0.95, minY: 0.98, maxY: 2.5, hd: 0.2 },
   block: { hw: 0.9, minY: 0, maxY: 2.6, hd: 0.8 },
@@ -244,6 +296,8 @@ export class Track {
       carLilac: { geo: trainCarModel('#b39cff', '#ffd23f'), mat: vc() },
       ramp: { geo: rampModel(), mat: vc() },
       yarn: { geo: yarnModel(), mat: vc() },
+      jelly: { geo: jellyModel(), mat: gloss({ roughness: 0.18, envMapIntensity: 0.8, emissive: 0xff2f86, emissiveIntensity: 0.28 }) },
+      boost: { geo: boostModel(), mat: (this.boostMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(1.6, 1.6, 1.6) })) },
     };
     this.pools = {};
     this.obstacles = [];
@@ -252,10 +306,12 @@ export class Track {
     this.heartGeo = heartGeometry(0.62, 0.16);
     this.heartMesh = new THREE.InstancedMesh(this.heartGeo, glossMat(0xff4f9a, { emissive: 0xff2f86, emissiveIntensity: 0.5, roughness: 0.28, envMapIntensity: 0.7 }), 220);
     this.heartMesh.frustumCulled = false;
+    this.heartMesh.castShadow = true;
     this.heartMesh.count = 0;
     this.group.add(this.heartMesh);
     this.appleMesh = new THREE.InstancedMesh(appleModel(), glossMat(0xffffff, { vertexColors: true, roughness: 0.38, envMapIntensity: 0.35, emissive: 0x3a0810, emissiveIntensity: 0.2 }), 24);
     this.appleMesh.frustumCulled = false;
+    this.appleMesh.castShadow = true;
     this.appleMesh.count = 0;
     this.group.add(this.appleMesh);
     this.items = []; // { kind: 'heart'|'apple', s, x, y, alive, magnet, phase }
@@ -288,6 +344,8 @@ export class Track {
       const def = this.models[kind];
       m = new THREE.Mesh(def.geo, def.mat);
       m.frustumCulled = false;
+      m.castShadow = true;
+      m.receiveShadow = true;
       this.group.add(m);
     }
     m.visible = true;
@@ -321,6 +379,15 @@ export class Track {
     this.tutorial = null;
   }
 
+  // Clear the road around Kitty after a revive.
+  clearNear(dist, ahead, onClear) {
+    for (const o of this.obstacles) {
+      if (o.dead || o.remove || o.trigger || o.sb < dist - 6 || o.sa > dist + ahead) continue;
+      o.remove = true;
+      if (onClear) onClear(o);
+    }
+  }
+
   // ---------- spawning helpers ----------
   laneX(l) {
     return l * LANE_W;
@@ -335,11 +402,12 @@ export class Track {
       o.meshes.push(m);
       return m;
     };
-    if (type === 'barrier' || type === 'gate' || type === 'yarn') {
+    if (type === 'barrier' || type === 'gate' || type === 'yarn' || type === 'jelly' || type === 'boost') {
       const d = OB[type];
       Object.assign(o, { hw: d.hw, minY: d.minY, maxY: d.maxY, sa: s - d.hd, sb: s + d.hd, s });
       add(type);
       if (type === 'yarn') o.move = extra.move ?? 9;
+      if (type === 'jelly' || type === 'boost') o.trigger = true;
     } else if (type === 'block') {
       const d = OB.block;
       Object.assign(o, { hw: d.hw, minY: d.minY, maxY: d.maxY, sa: s - d.hd, sb: s + d.hd, s });
@@ -448,6 +516,8 @@ export class Track {
       ['yarn', dist > 500 ? 0.9 + d * 0.6 : 0],
       ['zigzag', dist > 900 ? 0.8 + d : 0],
       ['breather', 0.6],
+      ['jelly', dist > 120 ? 0.9 : 0],
+      ['dash', dist > 250 ? 0.7 : 0],
     ];
     let total = weights.reduce((a, w) => a + w[1], 0);
     let r = Math.random() * total;
@@ -546,6 +616,40 @@ export class Track {
         powerLane = null;
         break;
       }
+      case 'jelly': {
+        // a trampoline launches Kitty over a wall of cakes along a heart arc
+        const lane = L[0];
+        this.addObstacle('jelly', lane, s);
+        const vy = JELLY_V, T = (2 * vy) / GRAVITY, D = speed * T;
+        const n = 11;
+        for (let i = 1; i < n; i++) {
+          const f = i / n, t = f * T;
+          this.addItem(i === 5 ? 'apple' : 'heart', lane, s + f * D, 0.9 + vy * t - 0.5 * GRAVITY * t * t);
+        }
+        // cakes under the arc in the jelly lane and one neighbour; one lane stays open
+        this.addObstacle('block', lane, s + D * 0.5);
+        this.addObstacle(Math.random() < 0.5 ? 'block' : 'barrier', L[1], s + D * 0.5);
+        this.addLine(L[2], s + D * 0.2, 4);
+        len = D + 4;
+        powerLane = null;
+        break;
+      }
+      case 'dash': {
+        // a Sugar Dash pad, then things to smash in the same lane
+        const lane = L[0];
+        this.addObstacle('boost', lane, s);
+        const step = Math.max(9, speed * 0.42);
+        for (let i = 1; i <= 3; i++) this.addObstacle(i === 2 ? 'block' : 'barrier', lane, s + 8 + i * step);
+        // hearts between the things to smash, never inside them
+        for (let i = 0; i < 3; i++) {
+          this.addItem('heart', lane, s + 8 + (i + 0.35) * step);
+          this.addItem('heart', lane, s + 8 + (i + 0.65) * step);
+        }
+        this.addLine(L[1], s + 10, 5);
+        len = 8 + 3 * step;
+        powerLane = null;
+        break;
+      }
       case 'breather': {
         let lane = L[0];
         for (let i = 0; i < 10; i++) {
@@ -635,6 +739,11 @@ export class Track {
         const base = o.type === 'ramp' || o.type === 'train' ? o.sa : o.s;
         m.position.set(o.x, 0, dist - base - (m.userData.zOff || 0));
         if (o.type === 'ramp') m.position.z = dist - o.sb;
+        if (o.type === 'jelly' && o.squash > 0) {
+          o.squash = Math.max(0, o.squash - dt * 2.5);
+          const w = Math.sin(o.squash * 20) * o.squash;
+          m.scale.set(1 + w * 0.3, 1 - w * 0.9, 1 + w * 0.3);
+        }
         if (o.type === 'yarn') {
           m.position.y = 0.82;
           if (o.rolling) m.rotation.x += ((speed + o.move) / 0.82) * dt;
@@ -645,6 +754,8 @@ export class Track {
         }
       }
     }
+
+    this.boostMat.color.setScalar(1.3 + Math.sin(time * 9) * 0.45);
 
     // collectibles
     const { _m, _q, _e, _v, _s } = this;
@@ -702,13 +813,19 @@ export class Track {
     const kx0 = k.x - KITTY_HW, kx1 = k.x + KITTY_HW;
     const ks0 = Math.min(k.prevDist, k.dist) - KITTY_HD, ks1 = k.dist + KITTY_HD;
     const near = [];
+    const triggers = [];
     for (const o of this.obstacles) {
       if (o.dead || k.time < o.ignoreUntil) continue;
       if (o.sb < ks0 || o.sa > ks1) continue;
       if (kx1 < o.x - o.hw || kx0 > o.x + o.hw) continue;
+      if (o.trigger) {
+        // pads fire when her feet touch them
+        if (!o.used && Math.min(k.y, k.y0 ?? k.y) <= o.maxY + 0.2) triggers.push(o);
+        continue;
+      }
       near.push(o);
     }
-    if (!near.length) return { ground, hit, side };
+    if (!near.length) return { ground, hit, side, triggers };
     const surfAt = (o, d) => (o.ramp ? o.top * THREE.MathUtils.clamp((d - o.sa) / (o.sb - o.sa), 0, 1) : o.top);
     // Height at the start of the frame, so one frame of gravity (or a big
     // frame step on a slow phone) can't sink her into a ramp.
@@ -739,7 +856,7 @@ export class Track {
         block(o);
       }
     }
-    return { ground, hit, side };
+    return { ground, hit, side, triggers };
   }
 
   // Returns collected things near Kitty.
