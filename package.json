@@ -1,0 +1,16 @@
+{
+  "name": "hellokitty-dream-dash",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Hello Kitty Dream Dash - a fan-made 3D endless runner for phones, built with three.js",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "serve": "http-server -p 8080 -c-1 .",
+    "test": "node tools/smoke-test.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "three": "0.186.1"
+  }
+}
