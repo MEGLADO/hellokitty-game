@@ -297,14 +297,14 @@ export class Track {
       ramp: { geo: rampModel(), mat: vc() },
       yarn: { geo: yarnModel(), mat: vc() },
       jelly: { geo: jellyModel(), mat: gloss({ roughness: 0.18, envMapIntensity: 0.8, emissive: 0xff2f86, emissiveIntensity: 0.28 }) },
-      boost: { geo: boostModel(), mat: (this.boostMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(1.6, 1.6, 1.6) })) },
+      boost: { geo: boostModel(), mat: (this.boostMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(1, 1, 1) })) },
     };
     this.pools = {};
     this.obstacles = [];
 
     // collectibles (instanced)
     this.heartGeo = heartGeometry(0.62, 0.16);
-    this.heartMesh = new THREE.InstancedMesh(this.heartGeo, glossMat(0xff4f9a, { emissive: 0xff2f86, emissiveIntensity: 0.5, roughness: 0.28, envMapIntensity: 0.7 }), 220);
+    this.heartMesh = new THREE.InstancedMesh(this.heartGeo, glossMat(0xe0206e, { emissive: 0x8f0f42, emissiveIntensity: 0.3, roughness: 0.34, envMapIntensity: 0.4 }), 220);
     this.heartMesh.frustumCulled = false;
     this.heartMesh.castShadow = true;
     this.heartMesh.count = 0;
@@ -437,17 +437,20 @@ export class Track {
     for (let i = 0; i < n; i++) this.addItem('heart', lane, s0 + i * gap, y);
   }
 
-  // Hearts following the jump arc over an obstacle at s.
+  // Hearts following the jump arc over an obstacle at s. They rise before
+  // the fence and come down after it, with clear air right over the fence.
   addArc(lane, s, speed, apple = false) {
     const T = (2 * JUMP_V) / GRAVITY;
-    const D = speed * T;
-    const n = 7;
+    const D = Math.max(speed, 17) * T;
+    const n = 9;
+    const gap = 2.4; // metres either side of the fence with no hearts
     for (let i = 0; i < n; i++) {
       const f = i / (n - 1);
+      const dz = (f - 0.5) * D;
+      if (Math.abs(dz) < gap) continue;
       const t = f * T;
       const y = 0.9 + JUMP_V * t - 0.5 * GRAVITY * t * t;
-      const kind = apple && i === 3 ? 'apple' : 'heart';
-      this.addItem(kind, lane, s - D / 2 + f * D, y);
+      this.addItem(apple && i === n - 3 ? 'apple' : 'heart', lane, s + dz, y);
     }
   }
 
@@ -642,8 +645,8 @@ export class Track {
         for (let i = 1; i <= 3; i++) this.addObstacle(i === 2 ? 'block' : 'barrier', lane, s + 8 + i * step);
         // hearts between the things to smash, never inside them
         for (let i = 0; i < 3; i++) {
-          this.addItem('heart', lane, s + 8 + (i + 0.35) * step);
-          this.addItem('heart', lane, s + 8 + (i + 0.65) * step);
+          this.addItem('heart', lane, s + 8 + (i + 0.38) * step);
+          this.addItem('heart', lane, s + 8 + (i + 0.62) * step);
         }
         this.addLine(L[1], s + 10, 5);
         len = 8 + 3 * step;
@@ -755,7 +758,7 @@ export class Track {
       }
     }
 
-    this.boostMat.color.setScalar(1.3 + Math.sin(time * 9) * 0.45);
+    this.boostMat.color.setScalar(0.95 + Math.sin(time * 9) * 0.25);
 
     // collectibles
     const { _m, _q, _e, _v, _s } = this;

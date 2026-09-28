@@ -21,9 +21,12 @@ void main() {
   vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
   ${bend ? BEND_APPLY : ''}
   gl_Position = projectionMatrix * mvPosition;
-  gl_PointSize = aSize * uScale / max(-mvPosition.z, 0.2);
+  float depth = max(-mvPosition.z, 0.2);
+  // never bigger than a fraction of the screen, and fade out instead of
+  // ballooning when a sprite flies past the camera
+  gl_PointSize = min(aSize * uScale / depth, uScale * 0.16);
   vColor = aColor;
-  vAlpha = aAlpha;
+  vAlpha = aAlpha * smoothstep(1.4, 3.6, depth);
   vSprite = aSprite;
   // butterflies flap between two frames
   if (aSprite > 7.5 && aSprite < 8.5 && sin(uTime * 22.0 + position.x * 3.1 + position.y * 5.3) < 0.0) vSprite = 12.0;
@@ -287,22 +290,19 @@ export class Particles {
   }
 
   ring(x, y, z, color = [1, 0.6, 0.85], size = 2.2, life = 0.45) {
-    this.add.emit({ x, y, z, color, size: 0.3, sizeEnd: size, sprite: SP.RING, life, rot: 0 });
+    this.add.emit({ x, y, z, color, size: 0.3, sizeEnd: size, sprite: SP.RING, life, rot: 0, alpha: 0.8 });
   }
 
   heartPop(x, y, z, double) {
-    const pink = [1.6, 0.45, 0.9];
-    const gold = [1.7, 1.25, 0.35];
-    this.burst(x, y, z, { count: 9, color: double ? [gold, [1.4, 1.4, 1.4]] : [pink, [1.4, 1.2, 1.4]], speed: 3.2, size: 0.32, sprite: SP.SPARKLE, life: 0.5 });
-    this.norm.emit({ x, y, z, vy: 1.8, color: double ? [1, 0.82, 0.3] : [1, 0.42, 0.7], size: 0.45, sizeEnd: 0.1, sprite: SP.HEART, life: 0.55, rot: 0 });
-    this.ring(x, y, z, double ? [1.4, 1.1, 0.4] : [1.2, 0.5, 0.9], 1.4, 0.3);
+    const pink = [1.5, 0.5, 0.9];
+    const gold = [1.6, 1.2, 0.35];
+    this.burst(x, y, z, { count: 6, color: double ? [gold, [1.3, 1.3, 1.3]] : [pink, [1.3, 1.2, 1.3]], speed: 2.6, size: 0.22, sprite: SP.SPARKLE, life: 0.4 });
   }
 
   bigPop(x, y, z, colors) {
-    this.burst(x, y, z, { count: 26, color: colors, speed: 6, size: 0.5, sprite: [SP.SPARKLE, SP.STAR, SP.GLOW], life: 0.9 });
-    this.burst(x, y, z, { count: 10, color: colors.map((c) => c.map((v) => Math.min(1, v * 0.7))), speed: 4, size: 0.4, sprite: SP.HEART, life: 1, additive: false, gravity: 3 });
-    this.ring(x, y, z, colors[0], 3.2, 0.5);
-    this.ring(x, y, z, [1.5, 1.5, 1.5], 2.2, 0.35);
+    this.burst(x, y, z, { count: 18, color: colors, speed: 5, size: 0.36, sprite: [SP.SPARKLE, SP.STAR], life: 0.8 });
+    this.burst(x, y, z, { count: 6, color: colors.map((c) => c.map((v) => Math.min(1, v * 0.8))), speed: 3.5, size: 0.3, sprite: SP.HEART, life: 0.9, additive: false, gravity: 3 });
+    this.ring(x, y, z, colors[0], 1.9, 0.45);
   }
 
   dust(x, y, z, n = 6, color = [1, 0.86, 0.93]) {
@@ -329,14 +329,14 @@ export class Particles {
   }
 
   poof(x, y, z) {
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 9; i++) {
       this.norm.emit({
         x: x + (Math.random() - 0.5) * 1.4, y: y + Math.random() * 1.6, z: z + (Math.random() - 0.5) * 0.8,
         vx: (Math.random() - 0.5) * 3, vy: Math.random() * 2, vz: (Math.random() - 0.5) * 3,
-        color: [1, 0.92, 0.97], size: 0.8, sizeEnd: 1.6, sprite: SP.PUFF, life: 0.6, drag: 2.5, alpha: 0.9,
+        color: [1, 0.92, 0.97], size: 0.5, sizeEnd: 1.0, sprite: SP.PUFF, life: 0.45, drag: 2.5, alpha: 0.7,
       });
     }
-    this.burst(x, y + 0.8, z, { count: 12, color: [[1.4, 1.2, 1.5]], speed: 5, size: 0.4, sprite: SP.SPARKLE, life: 0.6 });
+    this.burst(x, y + 0.8, z, { count: 10, color: [[1.5, 1.2, 1.5], [1.6, 1.4, 0.6]], speed: 5, size: 0.32, sprite: [SP.SPARKLE, SP.STAR], life: 0.55 });
   }
 
   confetti(camera, n = 70) {

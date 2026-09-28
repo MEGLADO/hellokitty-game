@@ -568,11 +568,10 @@ export function particleAtlas() {
   {
     const [x, y] = ctr(5);
     g.strokeStyle = '#fff';
-    g.lineWidth = 9;
+    g.lineWidth = 6;
     g.beginPath();
-    g.arc(x, y, 48, 0, Math.PI * 2);
+    g.arc(x, y, 50, 0, Math.PI * 2);
     g.stroke();
-    glow(x, y, 60, 0.25);
   }
   // 6 petal
   {

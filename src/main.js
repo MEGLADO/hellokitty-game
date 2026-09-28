@@ -423,7 +423,7 @@ class Game {
     this.flash = 0.6;
     this.flashColor.set('#ffd1ea');
     this.particles.bigPop(p.x, 1, 0, [[1.8, 0.6, 1.2], [1.6, 1.6, 1.6], [1.6, 1.3, 0.4]]);
-    this.particles.ring(p.x, 0.3, 0, [1.6, 0.7, 1.3], 4, 0.5);
+    this.particles.ring(p.x, 0.5, 0, [1.5, 0.7, 1.2], 2.2, 0.5);
     this.ui.show('hud');
     this.ui.hud(Math.floor(this.score), this.runHearts);
     this.state = 'countdown';
@@ -641,8 +641,8 @@ class Game {
       this.missions.add('jelly');
       this.kitty.kick(3.4);
       this.audio.boing();
-      this.particles.burst(o.x, 0.4, z, { count: 18, color: [[1.8, 0.55, 1.2], [1.6, 1.6, 1.6]], speed: 5, size: 0.38, life: 0.6 });
-      this.particles.ring(o.x, 0.2, z, [1.6, 0.6, 1.2], 3, 0.4);
+      this.particles.burst(o.x, 0.5, z, { count: 12, color: [[1.7, 0.55, 1.1], [1.5, 1.5, 1.5]], speed: 4.5, size: 0.28, life: 0.55, up: 2 });
+      this.particles.dust(o.x, 0.2, z, 6, [1, 0.72, 0.88]);
       this.shake = Math.max(this.shake, 0.12);
     } else if (o.type === 'boost') {
       this.activate('dash', p.x, 0.6, 0);
@@ -1131,7 +1131,7 @@ class Game {
     const rush = (this.powers.rush > 0 || this.powers.dash > 0) && st === 'playing';
     const u = this.fx.u;
     u.uSpeed.value = damp(u.uSpeed.value, rush ? 1 : st === 'playing' ? clamp((this.speed - 25) / 12, 0, 0.45) : 0, 4, dt);
-    u.uAberr.value = damp(u.uAberr.value, rush ? 0.3 : 0, 4, dt) + this.shake * 0.6;
+    u.uAberr.value = damp(u.uAberr.value, rush ? 0.1 : 0, 4, dt) + this.shake * 0.3;
     this.flash = Math.max(0, this.flash - dt * 2.2);
     u.uFlash.value = this.flash * this.flash;
     u.uFlashColor.value.copy(this.flashColor);
